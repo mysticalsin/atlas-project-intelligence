@@ -236,7 +236,7 @@ test('legacy-schema start: every module runs on the four old tables, twice (idem
   for (const t of ['bids', 'bid_references']) assert.equal(sql.exec("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ?", t).toArray()[0].n, 1, t);
 });
 
-test('util: single helper copy, exact email lists, uuid-ish ids and a soft per-instance rate limit', () => {
+test('util: single helper copy, exact email lists, uuid-ish ids and a durable rate limit', () => {
   assert.equal(util.inList('Ann@Client.Example ', 'x@y.co, ann@client.example'), true);
   assert.equal(util.inList('ann@client.example', 'client.example'), false, 'never a domain match');
   assert.equal(util.inList('', ',,'), false); assert.equal(util.inList('a@b.co', undefined), false);
@@ -244,8 +244,13 @@ test('util: single helper copy, exact email lists, uuid-ish ids and a soft per-i
   assert.equal(util.uuidish('01234567-89ab-cdef-0123-456789abcdef'), '01234567-89ab-cdef-0123-456789abcdef');
   for (const bad of ['', 'x', '../etc', '0123456789abcdef0123456789abcdeg', null]) assert.equal(util.uuidish(bad), '', String(bad));
   assert.equal(util.fail(429, 'Slow down.').status, 429); assert.equal(util.email(' A@B.CO '), 'a@b.co'); assert.equal(util.str('  a   b ', 10), 'a b');
-  let now = Date.parse('2026-09-29T00:00:00Z'); const l = { now: () => new Date(now).toISOString() }, other = { now: l.now };
+  let now = Date.parse('2026-09-29T00:00:00Z');
+  const sql = memorySql();
+  const l = new Library(sql, { now: () => new Date(now).toISOString() });
   assert.deepEqual([1, 2, 3].map(() => util.rateLimit(l, 'ask:alex', 2, 60000)), [true, true, false]);
-  assert.equal(util.rateLimit(l, 'ask:kim', 2, 60000), true, 'per key'); assert.equal(util.rateLimit(other, 'ask:alex', 2, 60000), true, 'per Library instance');
+  assert.equal(util.rateLimit(l, 'ask:kim', 2, 60000), true, 'per key');
+  const other = new Library(sql, { now: () => new Date(now).toISOString() });
+  assert.equal(util.rateLimit(other, 'ask:alex', 2, 60000), false, 'the same database keeps the cap');
   now += 60001; assert.equal(util.rateLimit(l, 'ask:alex', 2, 60000), true, 'the window slides');
+  assert.throws(() => util.rateLimit({ now: () => new Date(now).toISOString() }, 'ask:alex', 1, 60000), /exec/);
 });

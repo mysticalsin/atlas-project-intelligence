@@ -9,7 +9,7 @@
 import { cleanReference } from './library.js';
 import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
-import { str, obj, fail } from './util.js';
+import { str, obj, fail, eraseRateHits } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor, eraseSubjectInvitations } from './operate.js';
 import { placeholders } from './sql-bound.js';
@@ -316,6 +316,9 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   bump('directoryImports', scrubImportAuthors(lib, tenant, addresses, token));
   bump('outreachPayloads', scrubOutreachPayloads(lib, tenant, addresses, token));
   if (hasTenantColumn(lib, 'profiles')) { const prof = lib.rows('SELECT COUNT(*) AS n FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0].n; if (prof) { lib.exec('DELETE FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant); bump('profile'); } }
+  // rate_hits is keyed by the verified email, not by tenant. Ask and bid keys end with that email.
+  // A second form is erased only when the stored address and its lower-case form differ.
+  for (const subject of [...new Set([email, typeof email === 'string' ? email.trim().toLowerCase() : ''].filter(Boolean))]) bump('rateHits', eraseRateHits(lib, subject));
   // privacy_flags is keyed by email and has no tenant. Leaving it keeps another tenant's restriction from being cleared or set by this erasure.
   lib.log('privacy', 'atlas', 'erasure completed', 'subject ' + subjectHash(subj).slice(0, 8)); // a pseudonym of a pseudonym, never an email; written before the rewrite so the head it returns is final
   const sameTenantRefs = has('refs') ? lib.rows('SELECT id FROM refs WHERE ' + TENANT_SQL, tenant).map(r => r.id) : [];

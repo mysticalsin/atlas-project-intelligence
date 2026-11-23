@@ -20,15 +20,73 @@ export const inList = (address, csv) => {
   return !!e && String(csv || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean).includes(e);
 };
 
-// Soft per-DO-instance sliding-window limit: true when the call is allowed (and counted), false beyond `max`
-// calls within `windowMs`. In memory only, so it resets when the Durable Object restarts.
-const buckets = new WeakMap();
+// Durable sliding window on the library SQLite. True when the call is allowed and counted, false when it is over
+// `max` or the arguments are outside the bounds below. A new Library on the same database sees the same rows.
+// The WeakMap is not a second copy of the cap. Every SQL parameter is bound; the key is never interpolated.
+// The v4 plan accepts windowMs from 1000 ms through 7 days. Hits older than one day are still deleted
+// on each call (plan L1). Ask and bid-edit keys stay as the caller passed them, including when they have
+// no tenant. The subject in the key is the verified email.
+const RATE_DAY_MS = 86400000;
+const RATE_WINDOW_MAX = 7 * RATE_DAY_MS;
+const RATE_CREATE = 'CREATE TABLE IF NOT EXISTS rate_hits (bucket TEXT NOT NULL, at_ms INTEGER NOT NULL)';
+
+function rateNow(lib) {
+  const parsed = Date.parse(typeof lib?.now === 'function' ? lib.now() : '');
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function rateArgs(key, max, windowMs) {
+  const bucket = typeof key === 'string' ? key : '';
+  if (!bucket || bucket.length > 200) return null;
+  if (!Number.isInteger(max) || max < 1 || max > 10000) return null;
+  if (!Number.isInteger(windowMs) || windowMs < 1000 || windowMs > RATE_WINDOW_MAX) return null;
+  return { bucket, max, windowMs };
+}
+
+function requireLibrary(lib, name) {
+  if (typeof lib?.exec !== 'function' || typeof lib?.recorded !== 'function') throw new Error(name + ' needs a library with exec');
+}
+
 export function rateLimit(lib, key, max, windowMs) {
-  if (!buckets.has(lib)) buckets.set(lib, new Map());
-  const map = buckets.get(lib), parsed = Date.parse(typeof lib?.now === 'function' ? lib.now() : '');
-  const now = Number.isFinite(parsed) ? parsed : Date.now(), k = String(key);
-  const hits = (map.get(k) || []).filter(t => now - t < windowMs);
-  if (hits.length >= max) { map.set(k, hits); return false; }
-  hits.push(now); map.set(k, hits);
-  return true;
+  requireLibrary(lib, 'rateLimit');
+  const args = rateArgs(key, max, windowMs);
+  if (!args) return false;
+  const now = rateNow(lib);
+  return lib.recorded(() => {
+    lib.exec(RATE_CREATE);
+    // A row at or beyond one window ahead is stored at `now`. A strict `>` left a row dated exactly
+    // now + windowMs in the future, and that row still counted for a second window.
+    lib.exec('UPDATE rate_hits SET at_ms = ? WHERE bucket = ? AND at_ms >= ?', now, args.bucket, now + args.windowMs);
+    lib.exec('DELETE FROM rate_hits WHERE at_ms <= ?', now - RATE_DAY_MS);
+    lib.exec('DELETE FROM rate_hits WHERE bucket = ? AND at_ms <= ?', args.bucket, now - args.windowMs);
+    const n = Number(lib.rows('SELECT COUNT(*) AS n FROM rate_hits WHERE bucket = ? AND at_ms > ?', args.bucket, now - args.windowMs)[0].n);
+    if (n >= args.max) return false;
+    lib.exec('INSERT INTO rate_hits (bucket, at_ms) VALUES (?, ?)', args.bucket, now);
+    return true;
+  });
+}
+
+function bucketHasSubject(bucket, subject) {
+  if (bucket === subject) return true;
+  const mark = ':' + subject;
+  return typeof bucket === 'string' && bucket.length > mark.length && bucket.endsWith(mark);
+}
+
+// Group 10 calls this from erase. Rows whose bucket is that verified email, or ends with colon plus that email, go.
+// Another address is left in place. Every parameter is bound.
+export function eraseRateHits(lib, email) {
+  requireLibrary(lib, 'eraseRateHits');
+  const subject = typeof email === 'string' ? email : '';
+  if (!subject) return 0;
+  return lib.recorded(() => {
+    lib.exec(RATE_CREATE);
+    const rows = lib.rows('SELECT rowid AS id, bucket FROM rate_hits');
+    let removed = 0;
+    for (const row of rows) {
+      if (!bucketHasSubject(row.bucket, subject)) continue;
+      lib.exec('DELETE FROM rate_hits WHERE rowid = ?', row.id);
+      removed += 1;
+    }
+    return removed;
+  });
 }
