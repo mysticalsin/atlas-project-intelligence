@@ -10,7 +10,8 @@ function open(name='quality'){$('intelLiveWarning').hidden=window.AtlasVoice?.st
 async function api(path,method='GET',data){
  if(!['http:','https:'].includes(location.protocol))throw Error('Open the gateway-served ATLAS page to use this connection. The standalone HTML has no server, secrets or provider session.');
  let boot=window.AtlasVoice?.bootstrap();if(!boot)boot=await window.AtlasVoice.checkConnection();if(!boot)throw Error('No compatible application gateway connected.');
- const r=await fetch(path,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Atlas-CSRF':boot.csrf},body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(path.endsWith('/rank')?100000:path.endsWith('/refine')?50000:30000)});
+ const url=(typeof path==='string'&&(path.startsWith('/api/')||path.startsWith('/api?'))&&window.AtlasAuth&&window.AtlasAuth.path)?window.AtlasAuth.path(path):path;
+ const r=await fetch(url,{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Atlas-CSRF':boot.csrf},body:data===undefined?undefined:JSON.stringify(data),signal:AbortSignal.timeout(path.endsWith('/rank')?100000:path.endsWith('/refine')?50000:30000)});
  if(!r.ok)throw Error((await r.text()).slice(0,350)||'The operation was not confirmed.');
  return r.json();
 }

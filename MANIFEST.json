@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924781,
-      "sha256": "d0b3efb8911d99cdb7f45cb0fd60a578adaf627abf652f2952c8f31d60bd9659"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924781,
-      "sha256": "d0b3efb8911d99cdb7f45cb0fd60a578adaf627abf652f2952c8f31d60bd9659"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924781,
-      "sha256": "d0b3efb8911d99cdb7f45cb0fd60a578adaf627abf652f2952c8f31d60bd9659"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924781,
-      "sha256": "d0b3efb8911d99cdb7f45cb0fd60a578adaf627abf652f2952c8f31d60bd9659"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "CLAUDE.md",
@@ -787,8 +787,8 @@
     },
     {
       "path": "atlas_voice/multiinstance.py",
-      "bytes": 1791,
-      "sha256": "fb5f5c11503284c4da20081d86454bb3cca735949699a02e32b9b4e66f4cfd94"
+      "bytes": 1809,
+      "sha256": "1a9fc498c340d349b66fdd1a465d5fd45c96dd8f257c751e5678e5ff506c6627"
     },
     {
       "path": "atlas_voice/notes.py",
@@ -938,7 +938,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "cbfd1e5c93185b922fcc23b12df8507e75e21613b4661fb4a66edb5144285320"
+      "sha256": "a09d4e269ca43b739954dacde7d0bf72d159a44637f1a4b531aeef4f8ff59664"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -1003,7 +1003,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "c53aa47bd00890484b1988824a964bed59d1d853e5fc98b0ae0acbc1d61670ea"
+      "sha256": "dc1849925d3221d9cb4285f0d6a375964f033b33f0360c557b36ec5ffeb78d4e"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2318,7 +2318,7 @@
     {
       "path": "handoff/CODE_MAP.md",
       "bytes": 10437,
-      "sha256": "52eac58c33d981310d72ec6d17a33cd9a69b6b569ab48bcf6e329ff5ae34285a"
+      "sha256": "800066ab168e895b534b3e572f32d1c803cd65a7bd8f72e71a7d3a3f75fce4ce"
     },
     {
       "path": "handoff/COMMIT_MSG.txt",
@@ -2867,8 +2867,8 @@
     },
     {
       "path": "src/intelligence-ui.js",
-      "bytes": 22552,
-      "sha256": "85844dca3bf511f23fb62fa47e51625bee23f7c844a25cacdceb1b34531a5318"
+      "bytes": 22716,
+      "sha256": "1a2884f59ef199f91d517842ef82ebdb664354384499fc10e22886699e220adf"
     },
     {
       "path": "src/intelligence.css",
@@ -3059,6 +3059,11 @@
       "path": "tests/autosave_chain_browser.py",
       "bytes": 5446,
       "sha256": "3eab5c07f2dd75678d7baddb22e7ff948e21893784e6c0dd4a72020f4d822761"
+    },
+    {
+      "path": "tests/base-path-api.test.js",
+      "bytes": 2971,
+      "sha256": "4e0936cc56a1e15bd879069955e55cdacbc0af358ceace86f5ac7c85f56a54a3"
     },
     {
       "path": "tests/bids-core.test.js",

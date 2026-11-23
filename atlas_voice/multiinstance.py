@@ -21,7 +21,7 @@ class PostgresAdapter:
     def __init__(self, dsn=''):
         if not isinstance(dsn, str):
             raise TypeError('Postgres DSN must be a string.')
-        # A refused stub must not keep a DSN. It can hold a password.
+        # The argument is not retained. configured is only whether a string was passed.
         self.configured = bool(dsn)
 
     def connect(self):
