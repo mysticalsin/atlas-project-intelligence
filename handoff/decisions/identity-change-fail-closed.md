@@ -75,6 +75,16 @@ Devin on `a7c1855c94db43af6b0e5a6cb31c9a8fa0c7a6a9`: CODE INCOMPLETE and BODY FA
 
 GitHub Actions was not run. CI is budget-blocked.
 
+## Exact-head gate, loop 4
+
+Devin on `837b861759ae4c4098a02cc7a165adbddbb577d5`: CODE INCOMPLETE and BODY FAIL. Report `PREMERGE-atlas-stalled-15-56-48-40.md`, sha256 `3cc46d8d84b8e1f96602beacf9ae27889f8a9c21077aa4c2f788b86a821030c2`. The CONSENSUS line on that head was AGREED for `8fc2d0d7c4fd24d62e27c04b7a14c9387082fcb7`. It does not cover `837b8617`. No product source changed. The test commit is `507046b34cde4feb89855837f1a728b99da5f8b1`.
+
+- `timingSafe` in `deploy/cloudflare-edge/src/timing-safe.js` skipped index 0 (`if (i === 0) continue`). A bearer secret, a CSRF token, and a 32-character bound subject key that differ only in the first character were accepted. Red: bearer 201 instead of 401, CSRF 200 instead of 403, both forwards ran, and the library opened (`opened: ['global']`, status 200). The real secret stayed 201 and the real CSRF stayed 200. The last-character test stayed green. Green on the restored tree: 48 identity tests, 0 fail, exit 0, duration_ms 247.194207.
+- The harness `getElementById` in `tests/identity-change.test.js` returns a node only while `node.connected` is true. Dropping that check at both sites used to leave 18 pass, 0 fail, so it did not kill the observer mutant and it was not itself tested. After the blank, the lookup of `storageStatus` must be null. Red: both clean-console tests fail with `a disconnected node is returned after the identity blank` (18 tests, 16 pass, 2 fail, exit 1). Removing `watchObserver(storageObserver)` stays a separate failure. Green on the restored tree: the lookup is null.
+- `handoff/BUILD_STATUS.md` heading for 2026-11-21 used an em dash. The heading now uses a hyphen. This loop's heading does too.
+
+GitHub Actions is budget-blocked. Local runs on this head are SUBSTITUTE CI.
+
 ## Known limits
 
 - A caller that sends no bound header, and a tab loaded before this page was deployed, keeps today's behavior. The server identity is still the JWT, so that caller receives only the JWT's own data. The old page does not learn that the person changed until it is reloaded.

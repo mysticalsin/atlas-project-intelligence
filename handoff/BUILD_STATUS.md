@@ -1,7 +1,27 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
-## 2026-11-21 — identity change, survivor tests (`cursor/atlas-identity-change-residual`)
+## 2026-11-23 - identity change, first-character compare (`cursor/atlas-identity-change-residual`)
+
+Devin on `837b861759ae4c4098a02cc7a165adbddbb577d5`: CODE INCOMPLETE and BODY FAIL. Report `PREMERGE-atlas-stalled-15-56-48-40.md`, sha256 `3cc46d8d84b8e1f96602beacf9ae27889f8a9c21077aa4c2f788b86a821030c2`. No product source changed. The test commit is `507046b34cde4feb89855837f1a728b99da5f8b1`.
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+48 tests, 48 pass, 0 fail, exit 0, duration_ms 247.194207.
+
+- Skipping index 0 in `timingSafe` (`if (i === 0) continue` in `deploy/cloudflare-edge/src/timing-safe.js`) left the last-character test green. Red: bearer 201 instead of 401, CSRF 200 instead of 403, `bearerOpened` 2, `libraryOpened` 2, and the bound subject key that differs only in the first character opened the library (status 200, `opened: ['global']`). Identity file 48 tests, 47 pass, 1 fail, exit 1, duration_ms 249.166052. Green on the restored tree: 48 pass, 0 fail, exit 0, duration_ms 247.194207.
+- Dropping `node.connected` from both harness `getElementById` sites used to leave 18 pass, 0 fail. The blank now requires that lookup to return null. Red: `a disconnected node is returned after the identity blank`, 18 tests, 16 pass, 2 fail, exit 1, duration_ms 171.761001. Green on the restored tree: both assertions pass inside the 48.
+- The 2026-11-21 status heading below used an em dash. It now uses a hyphen.
+
+The page pin did not move. GitHub Actions is budget-blocked. Local runs are SUBSTITUTE CI. A substitute run is not a CODE PASS.
+
+`MANIFEST.json` is regenerated after this note. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
+## 2026-11-21 - identity change, survivor tests (`cursor/atlas-identity-change-residual`)
 
 Devin on `a7c1855c94db43af6b0e5a6cb31c9a8fa0c7a6a9`: CODE INCOMPLETE and BODY FAIL. Four mutants stayed green under the previous tests. No product source changed. The test commit is `d4753fe75d7a781673038121fd179843ad4361c9`.
 
