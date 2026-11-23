@@ -11,7 +11,7 @@ const EVENT = { 'GET export': 'privacy_export', 'POST erase': 'privacy_erase', '
 const BUCKET = { 'GET export': 'me-export', 'POST erase': 'me-erase', 'POST flags': 'flags', 'POST receipts': 'consent' };
 
 export async function internalRoutes(ctx) {
-  const { lib, user, method, url, body, env = {}, storage } = ctx, path = url.pathname.replace(/^\/api\/privacy\/?/, '').split('/').filter(Boolean), key = method + ' ' + path[0];
+  const { lib, user, method, url, body, env = {}, storage, signal } = ctx, path = url.pathname.replace(/^\/api\/privacy\/?/, '').split('/').filter(Boolean), key = method + ' ' + path[0];
   if (user.role === 'system' || user.role === 'external') throw fail(404, 'Not found.');
   privacy.ensure(lib);
   const subj = user.subj;
@@ -26,7 +26,8 @@ export async function internalRoutes(ctx) {
   const note = async (reason, extra = {}) => secEvent(env, EVENT[key], { route: url.pathname, method, status: 200, reason, subj, role: user.role, ...extra });
   if (key === 'POST receipts') {
     if (!subj) throw fail(400, 'A subject key is required.');
-    const b = obj(body), r = privacy.recordReceipts(lib, subj, b.items, { channel: b.channel });
+    if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
+    const b = obj(body), r = privacy.recordReceipts(lib, subj, b.items, { channel: b.channel, signal });
     if (r.recorded.length) await note('CONSENT_CHANGED', { n: r.recorded.length });
     return { body: { recorded: r.recorded.length, state: r.state } };
   }

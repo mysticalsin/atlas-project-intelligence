@@ -7,6 +7,7 @@ import { memorySql } from './sqlite.js';
 import { consume } from '../src/ratelimit.js';
 import { applyState, loadState, postReceipts } from '../src/privacy.js';
 import { eraseMine } from '../src/subject-rights.js';
+import { libraryRoutes } from '../src/library-routes.js';
 import * as util from '../src/util.js';
 
 const DAY = 864e5;
@@ -133,16 +134,16 @@ test('L2 out-of-range limit parameters are refused', () => {
   assert.equal(rowsOf(sql).length, 1);
 });
 
-test('L2 a window longer than one day is refused because pruning is one day', () => {
+test('L2 a window of seven days is accepted and one millisecond past that is refused', () => {
   const sql = memorySql();
   const clock = { now: Date.parse('2026-11-21T00:00:00.000Z') };
   const lib = libraryAt(sql, clock);
   const key = 'ask:ada@example.test';
-  assert.equal(util.rateLimit(lib, key, 1, 7 * DAY), false, 'seven days is past the one-day prune horizon');
-  assert.equal(util.rateLimit(lib, key, 1, DAY + 1), false);
+  assert.equal(util.rateLimit(lib, key, 1, 7 * DAY + 1), false, 'past seven days writes nothing');
   assert.equal(rowsOf(sql).length, 0);
-  assert.equal(util.rateLimit(lib, key, 1, DAY), true, 'one day is still inside the horizon');
+  assert.equal(util.rateLimit(lib, key, 1, 7 * DAY), true, 'seven days is the plan maximum');
   assert.equal(rowsOf(sql).length, 1);
+  assert.equal(util.rateLimit(lib, 'ask:bob@example.test', 1, DAY), true, 'one day is still inside the horizon');
 });
 
 test('L3 the limit subject is the verified email', () => {
@@ -296,6 +297,50 @@ test('a late beforeCommit after timeout does not write a receipt', { timeout: 10
   const state = await loadState(storage);
   assert.equal(state.purposes.draft?.granted, true);
   assert.notEqual(state.purposes.transcription?.granted, true);
+});
+
+function receiptRows(sql) {
+  const names = sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'consent_receipts'").toArray();
+  if (!names.length) return [];
+  return sql.exec('SELECT purpose, granted FROM consent_receipts').toArray();
+}
+
+function receiptRequest(signal) {
+  return new Request('https://atlas.internal/api/privacy/receipts', {
+    method: 'POST',
+    signal,
+    headers: {
+      'content-type': 'application/json',
+      'x-atlas-user': 'ada@example.test',
+      'x-atlas-role': 'user',
+      'x-atlas-email': 'ada@example.test',
+      'x-atlas-subj': 'ab'.repeat(16),
+    },
+    body: JSON.stringify({ items: [{ purpose: 'transcription', granted: true, mode: 'voice', channel: 'api' }], channel: 'api' }),
+  });
+}
+
+test('an aborted receipt post does not insert and does not return a receipt', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => '2026-11-21T00:00:00.000Z' });
+  const ac = new AbortController();
+  ac.abort();
+  const res = await libraryRoutes(receiptRequest(ac.signal), lib);
+  const body = await res.json();
+  assert.equal(receiptRows(sql).length, 0, 'an aborted call must not insert a receipt');
+  assert.notEqual(res.status, 200, 'an aborted call must not answer 200');
+  assert.notEqual(body.recorded, 1);
+});
+
+test('a live receipt post still inserts one row', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => '2026-11-21T00:00:00.000Z' });
+  const res = await libraryRoutes(receiptRequest(undefined), lib);
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(body.recorded, 1);
+  assert.equal(receiptRows(sql).length, 1);
+  assert.equal(receiptRows(sql)[0].purpose, 'transcription');
 });
 
 test('L4 a beforeCommit that hangs releases the lock', { timeout: 500 }, async () => {

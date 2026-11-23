@@ -23,10 +23,11 @@ export const inList = (address, csv) => {
 // Durable sliding window on the library SQLite. True when the call is allowed and counted, false when it is over
 // `max` or the arguments are outside the bounds below. A new Library on the same database sees the same rows.
 // The WeakMap is not a second copy of the cap. Every SQL parameter is bound; the key is never interpolated.
-// Sentinel L2: windowMs stops at one day, the same horizon that deletes every bucket's older rows. A longer
-// window would be shortened by that prune, so it is refused instead. Ask and bid-edit keys stay as the caller
-// passed them, including when they have no tenant. The subject in the key is the verified email.
+// The v4 plan accepts windowMs from 1000 ms through 7 days. Hits older than one day are still deleted
+// on each call (plan L1). Ask and bid-edit keys stay as the caller passed them, including when they have
+// no tenant. The subject in the key is the verified email.
 const RATE_DAY_MS = 86400000;
+const RATE_WINDOW_MAX = 7 * RATE_DAY_MS;
 const RATE_CREATE = 'CREATE TABLE IF NOT EXISTS rate_hits (bucket TEXT NOT NULL, at_ms INTEGER NOT NULL)';
 
 function rateNow(lib) {
@@ -38,7 +39,7 @@ function rateArgs(key, max, windowMs) {
   const bucket = typeof key === 'string' ? key : '';
   if (!bucket || bucket.length > 200) return null;
   if (!Number.isInteger(max) || max < 1 || max > 10000) return null;
-  if (!Number.isInteger(windowMs) || windowMs < 1000 || windowMs > RATE_DAY_MS) return null;
+  if (!Number.isInteger(windowMs) || windowMs < 1000 || windowMs > RATE_WINDOW_MAX) return null;
   return { bucket, max, windowMs };
 }
 

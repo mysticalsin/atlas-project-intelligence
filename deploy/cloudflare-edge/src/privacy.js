@@ -208,7 +208,8 @@ export function stateFromReceipts(lib, subject) {
 }
 
 // items: [{ purpose, granted, mode?, channel? }]. A receipt is appended only when the latest one for that purpose differs (granted flips, or the wording version changed).
-export function recordReceipts(lib, subject, items, { channel = 'api', now = lib.now() } = {}) {
+export function recordReceipts(lib, subject, items, { channel = 'api', now = lib.now(), signal } = {}) {
+  if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
   ensure(lib);
   const subj = subjectOf(subject);
   if (!subj) throw fail(400, 'A subject key is required.');
@@ -225,8 +226,10 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
   }
   if (!pending.length) return { recorded: [], state: latest };
+  if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
   // A healthy chain checkpoints this line with the receipt. A damaged chain stores the receipt and does not append.
   return lib.recorded(() => {
+    if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
     const out = [];
     for (const row of pending) {
       lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);
