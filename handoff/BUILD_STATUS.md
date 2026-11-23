@@ -1,6 +1,138 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 - identity change, first-character compare (`cursor/atlas-identity-change-residual`)
+
+Devin on `837b861759ae4c4098a02cc7a165adbddbb577d5`: CODE INCOMPLETE and BODY FAIL. Report `PREMERGE-atlas-stalled-15-56-48-40.md`, sha256 `3cc46d8d84b8e1f96602beacf9ae27889f8a9c21077aa4c2f788b86a821030c2`. No product source changed. The test commit is `507046b34cde4feb89855837f1a728b99da5f8b1`.
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+48 tests, 48 pass, 0 fail, exit 0, duration_ms 247.194207.
+
+- Skipping index 0 in `timingSafe` (`if (i === 0) continue` in `deploy/cloudflare-edge/src/timing-safe.js`) left the last-character test green. Red: bearer 201 instead of 401, CSRF 200 instead of 403, `bearerOpened` 2, `libraryOpened` 2, and the bound subject key that differs only in the first character opened the library (status 200, `opened: ['global']`). Identity file 48 tests, 47 pass, 1 fail, exit 1, duration_ms 249.166052. Green on the restored tree: 48 pass, 0 fail, exit 0, duration_ms 247.194207.
+- Dropping `node.connected` from both harness `getElementById` sites used to leave 18 pass, 0 fail. The blank now requires that lookup to return null. Red: `a disconnected node is returned after the identity blank`, 18 tests, 16 pass, 2 fail, exit 1, duration_ms 171.761001. Green on the restored tree: both assertions pass inside the 48.
+- The 2026-11-21 status heading below used an em dash. It now uses a hyphen.
+
+The page pin did not move. GitHub Actions is budget-blocked. Local runs are SUBSTITUTE CI. A substitute run is not a CODE PASS.
+
+`MANIFEST.json` is regenerated after this note. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
+## 2026-11-21 - identity change, survivor tests (`cursor/atlas-identity-change-residual`)
+
+Devin on `a7c1855c94db43af6b0e5a6cb31c9a8fa0c7a6a9`: CODE INCOMPLETE and BODY FAIL. Four mutants stayed green under the previous tests. No product source changed. The test commit is `d4753fe75d7a781673038121fd179843ad4361c9`.
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+47 tests, 47 pass, 0 fail, exit 0, duration_ms 250.089768.
+
+- Cutting `timingSafe` to the first 8 characters accepted a bearer secret that differs only in the last character (201, not 401) and a CSRF token that differs only in the last character (200, not 403). The real secret and the real CSRF stayed accepted.
+- Dropping `boundSubject` and `boundEmail` from `runtimeBlock` left `app.test.js` at 39 pass, 0 fail. `GET /` embedded neither key, and the library call made with the page's fallback returned 409 `IDENTITY_CHANGED`.
+- Appending the identity notice to `document.body` left the old alert test green. The parent walk found the hidden body.
+- Removing `watchObserver(storageObserver)` made the save control copy the status written during the blank (`Saved on this device · no cloud sync`). The old failure was only `3 !== 2`.
+
+The page pin did not move. `python3 build.py` during `make test-ui` printed 929767 bytes.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/bin/google-chrome`. `ATLAS_WORKERD_ROOT` is unset and `/tmp/atlas-workerd-20261023` is absent. GitHub Actions was not run: CI is budget-blocked.
+
+- `node --test tests/*.test.js`: 437 tests, 437 pass, 0 fail, exit 0, duration_ms 22015.65862.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1146 tests, 1142 pass, 0 fail, 4 skipped, exit 0, duration_ms 224243.837374. The four skips are the workerd 2026-10-23 SQL tail tests.
+- `CHROMIUM_PATH=/usr/bin/google-chrome make test-ui`: PASS 834, FAIL 0, exit 0.
+- Pytest on the test commit, before this note: 411 passed, 2 failed, 127 warnings, 24.44s, exit 1. Both failures are the stale manifest naming the two test files.
+- After this note's manifest write, and before the commit: `check_handoff . --dev-git-index` exit 0, 700 release files. Pytest 412 passed, 1 failed, 127 warnings, 24.18s, exit 1. The failure is `test_git_archive_of_head_passes_check_handoff`, because HEAD does not yet contain this `MANIFEST.json`. The committed-tree pytest is in the gate packet.
+
+`MANIFEST.json` is regenerated after this note. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
+## 2026-11-20 — identity change, full-length compare and observer registration (`cursor/atlas-identity-change-residual`)
+
+Devin on `281742422039ad23d0764213be1455a2ecc49bbc`, tree `4b8012864178b6693ef73f1ce2e47b25dd39e348`: CODE INCOMPLETE and BODY FAIL. Merge-tree onto `main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was clean. Inspector DELTA r2 PASS WITH NOTES on that head is superseded. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+`sameKey` already compared all 32 characters. The orb already registered its storage observer. The new tests pass on that head, so this loop has no product-code change. The test commit is `a4edc6ce035454059d455196c52b4468e0205022` (tree `4138e2ee63eb14ecee8d810ee453c71dd8cc2e20`).
+
+On that commit:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+44 tests, 44 pass, 0 fail, exit 0, duration_ms 241.563937.
+
+Cutting `timingSafe` to the first 8 hex characters opened the library, status 200, for a key that shares the first 8, a key that differs only in the last character, and an email key that differs only in the last character. Removing the `watchObserver` registration let the storage observer run after the blank: 3 callbacks, the test expected 2. `slice(0, 63)` stayed green. A 32-character key has no 64th character, so that cut compares the whole key. A presented 64-character value that shares its first 63 characters with `key + key` is rejected by the 32-character hex check before the compare. The header strip, the upper-case key, and the U+00A0 key were already green when added. They are regression guards.
+
+The page pin did not move. `python3 build.py` during `make test-ui` printed 929767 bytes. sha256 `1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1`.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome`. `ATLAS_WORKERD_ROOT` is unset and `/tmp/atlas-workerd-20261023` is absent.
+
+- `node --test tests/*.test.js`: 436 tests, 436 pass, 0 fail, exit 0, duration_ms 22064.617337.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1144 tests, 1140 pass, 0 fail, 4 skipped, exit 0, duration_ms 238417.916817. The four skips are the workerd 2026-10-23 SQL tail tests.
+- `make test-ui`: PASS 834, FAIL 0, exit 0.
+- Twenty-five mutants each turned a named test red and were restored. That is the previous twenty-three plus the 8-character cut and the removed observer registration.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
+## 2026-11-20 — identity change, inspector notes and exact-head gate (`cursor/atlas-identity-change-residual`)
+
+Inspector, first QA, on `b60694e30d5465dfbe700871b46266f56b6ef633`: PASS WITH NOTES. Report sha256 `745fba3ef3c2dcac708c68b37228159b01734a19ba96ab45d355c2452ca1f32a`. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+Devin, exact-head gate, on the same head: CODE INCOMPLETE. Report file sha256 `ccdb92351485495408e11f6d41ebe842e5acbbb00ca5618c1da17a064e8d66c7`. The report's last line claims `fb0519bf4bedc60333d3e8178dbd97f55da3cda2d6cabe4fb3631b046651e0ff`. Three mutants survived: lower-casing before the hex check, trimming before the compare, and skipping the check when the server subject key is empty.
+
+The compare rejects anything that is not exactly 32 lowercase hex characters. It does not trim and it does not lower-case a value into a match. An empty server subject key does not skip the check. Production without `LOG_SALT` still returns the `LOG_SALT` 503 when the request presents no bound header. A presented email key, with the subject header absent or empty, is 409 `IDENTITY_CHANGED` and opens no Durable Object.
+
+Red for the inspector notes is `8038f8c9ef74453c2c2976fc1d300683fd3bcb97` (tree `9da89a1d2fdd1b3fc3b9c919e3561a58791a6fa8`). Before the product change, the three new tests were 3 tests, 1 pass, 2 fail, exit 1, duration_ms 218.04967. The header-strip table already passed. The alert and the uncaught page error failed. The fix is `932cfcbe4173b203fc42ca57d3e2855a9acad62a` (tree `1a618b0b59fdc53d55e92c20042af2ac4f27ba72`).
+
+Red for the three surviving mutants is `20f1b68c4183f30aa65b215e41c3c3062fbe5f86` (tree `1e75525791985077f4bc01b2d8f66486f02d8540`). The three new tests on that commit, before the product change: 3 tests, 2 pass, 1 fail, exit 1, duration_ms 258.283029. Upper case and U+00A0 already failed closed. The empty server subject key returned 503 `LOG_SALT`. The fix is `6322fa372042a8ba7360fc1f7425523db0cb93f8` (tree `c724b5e92f89af036be86511d935b889126eaca0`).
+
+On that fix:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+42 tests, 42 pass, 0 fail, exit 0, duration_ms 345.528084.
+
+`python3 build.py` rebuilt the four HTML aliases (929767 bytes, sha256 `1c7ce2a51fc8e4b8f360b483d9173e198cc2d0c9dcf95a386f911af46c8ac3d1`). `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` is that pin. `deploy/cloudflare-edge/src/csp.generated.js` moved with the script hashes. The bound-key change is Worker-only, so the page pin did not move again.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome` (the wrapper for `/usr/bin/google-chrome-stable`). Workerd is not installed here, so the edge suite skips the four workerd cases.
+
+- `node --test tests/*.test.js`: 435 tests, 435 pass, 0 fail, exit 0, duration_ms 24735.959707.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1143 tests, 1139 pass, 0 fail, 4 skipped, exit 0, duration_ms 248063.233674.
+- `make test-ui`: PASS 834, FAIL 0, exit 0. The page under test is the 929767-byte rebuild above.
+- Twenty-three mutants each turned a named test red and were restored: the eleven in the plan, the five debate residuals, the library strip, the voice strip, the memory strip, the unguarded observer, lower-casing before the hex check, trimming before the compare, and skipping when the server subject key is empty. Lower-casing and trimming each opened the library (200). The empty-subject skip returned 503 `LOG_SALT`.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
+## 2026-11-20 — identity change fails closed (`cursor/atlas-identity-change-residual`)
+
+Sentinel plan debate: ACCEPT WITH CHANGES. Report sha256 `b2075991672e35c085b3d0fde0c0d23c828c83f444f318cb2aa7e8c7b75970cf`. Not merge approval. The record is `handoff/decisions/identity-change-fail-closed.md`.
+
+`origin/main` `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec` was merged with an ordinary merge. The red commit for R1–R5 is `3a569bb55830d28d1bffe659e397156b2203c537` (tree `283e3d1f37d60077504ac1dc7a7c1e90c60bef7b`). On that commit, before the product change:
+
+```sh
+node --test tests/identity-change.test.js deploy/cloudflare-edge/test/identity-change.test.js
+```
+
+31 tests, 0 pass, 31 fail, exit 1, duration_ms 291.971226. The fix is `87beb8aba1c95e2c0c3cd2c1193c940416ed13bc` (tree `9b8fdfd94f1411dd34b4d52602ccfc2209aa4a6b`). The same command on the fix, plus the matching-key, absent-key, and wrong-subject checks, is 36 tests, 36 pass, 0 fail, exit 0, duration_ms 308.513316.
+
+Owner decisions in the record: an Entra email change with the same `tid:oid` fails closed; the Python cookie path is out of scope; the in-progress voice view is discarded and A's Durable Object is left untouched; A's localStorage blob is left in place and unread.
+
+`python3 build.py` rebuilt the four HTML aliases (929158 bytes, sha256 `7d6729460acfaa90e0a71c8e8561978e3c9415e97c7e3c062f9e164e8b87ab52`). `deploy/cloudflare-edge/generated/PAGE_SHA256.txt` is that pin. `deploy/cloudflare-edge/src/csp.generated.js` moved with the script hashes.
+
+Measured on this working tree, `ATLAS_DEPLOY_STUB` unset, `CHROMIUM_PATH=/usr/local/bin/google-chrome` (the wrapper for `/usr/bin/google-chrome-stable`):
+
+- `node --test tests/*.test.js`: 433 tests, 433 pass, 0 fail, exit 0, duration_ms 21593.190169.
+- `cd deploy/cloudflare-edge && node --test test/*.test.js`: 1139 tests, 1135 pass, 0 fail, 4 skipped, exit 0, duration_ms 231038.376551.
+- `make test-ui`: PASS 834, FAIL 0, exit 0.
+- Seventeen mutants (the eleven in the plan, plus no protocol echo, no focus probe, reload-guard bypass, consent omitted from the check, a malformed key accepted, and the library header strip removed) each turned a named test red and were restored.
+
+`MANIFEST.json` is regenerated after this note. Pytest and `check_handoff . --dev-git-index` on the committed tree are in the gate packet. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open. No deploy, no Access or DNS change, and no `ATLAS_DEV_IDENTITY`.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

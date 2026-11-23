@@ -138,6 +138,59 @@ async function subjectPseudonym(env, sub) {
   if (env.CSRF_SECRET) return (await hmac('subject-v1:' + env.CSRF_SECRET, sub)).slice(0, 32);
   return '';
 }
+const HEX_KEY = /^[0-9a-f]{32}$/;
+// Bound keys use their own HMAC label, so a header is not the log or storage pseudonym.
+async function boundDigest(env, label, value) {
+  if (env.LOG_SALT) return (await hmac(env.LOG_SALT, label + value)).slice(0, 32);
+  if (String(env.DATA_MODE || '').toLowerCase() === 'production') return null;
+  if (env.CSRF_SECRET) return (await hmac(label + env.CSRF_SECRET, value)).slice(0, 32);
+  return '';
+}
+async function boundSubjectKey(env, sub) {
+  return boundDigest(env, 'atlas-bound-subject-v1:', sub);
+}
+async function boundEmailKey(env, email) {
+  const box = validEmail(email);
+  if (!box) return '';
+  return boundDigest(env, 'atlas-bound-email-v1:', box);
+}
+function sameKey(left, right) {
+  // Exact 32 lowercase hex only. Do not trim and do not lower-case a value into a match.
+  const a = String(left || ''), b = String(right || '');
+  if (!HEX_KEY.test(a) || !HEX_KEY.test(b) || a.length !== b.length) return false;
+  return timingSafe(a, b);
+}
+function boundTokens(header) {
+  if (!header) return [];
+  return String(header).split(',').map(part => part.trim()).filter(part => part.toLowerCase().startsWith('atlas-bound-'));
+}
+function identityMismatch(request, boundSubject, boundEmail) {
+  const subject = request.headers.has('x-atlas-bound-subject') ? (request.headers.get('x-atlas-bound-subject') || '') : null;
+  const email = request.headers.has('x-atlas-bound-email') ? (request.headers.get('x-atlas-bound-email') || '') : null;
+  // An empty server subject key does not skip the check. Any presented bound header or token is a mismatch.
+  if (!HEX_KEY.test(String(boundSubject || '')) && (subject !== null || email !== null || boundTokens(request.headers.get('sec-websocket-protocol')).length > 0)) return { mismatch: true, protocol: '' };
+  const tokens = boundTokens(request.headers.get('sec-websocket-protocol'));
+  if (tokens.length > 1) return { mismatch: true, protocol: '' };
+  if (subject !== null && !sameKey(subject, boundSubject)) return { mismatch: true, protocol: '' };
+  if (email !== null && !sameKey(email, boundEmail)) return { mismatch: true, protocol: '' };
+  if (tokens.length === 1) {
+    const token = tokens[0];
+    const hex = token.startsWith('atlas-bound-') ? token.slice('atlas-bound-'.length) : '';
+    if (!sameKey(hex, boundSubject)) return { mismatch: true, protocol: '' };
+    return { mismatch: false, protocol: token };
+  }
+  return { mismatch: false, protocol: '' };
+}
+function stripBound(headers) {
+  headers.delete('x-atlas-bound-subject');
+  headers.delete('x-atlas-bound-email');
+  const protocol = headers.get('sec-websocket-protocol');
+  if (!protocol || !/atlas-bound-/i.test(protocol)) return;
+  const rest = protocol.split(',').map(part => part.trim()).filter(part => part && !part.toLowerCase().startsWith('atlas-bound-'));
+  if (rest.length) headers.set('sec-websocket-protocol', rest.join(', '));
+  else headers.delete('sec-websocket-protocol');
+}
+const IDENTITY_CHANGED = { error: 'The signed-in identity changed. Reload ATLAS and sign in again.', code: 'IDENTITY_CHANGED' };
 const NOT_COVERED = [
   { store: 'interview-checkpoint', exported: false, erased: false, reason: 'The Interview Durable Object was not opened. Its checkpoint was not exported or erased.' },
   { store: 'interview-consent', exported: false, erased: false, reason: 'Consent state on the Interview object was not exported or erased.' },
@@ -264,7 +317,6 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     const tenant = tenantOf(who);
     const tenantFlag = tenantEnforced(env) ? '1' : '0';
     const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = await subjectPseudonym(env, who.sub);
-    if (subjectKey === null) return json(env, { error: 'This deployment cannot record a subject pseudonym until LOG_SALT is set.', code: 'LOG_SALT' }, 503);
     slog.identify(subjectKey, role);
     if (blockedSubject(env, subjectKey)) { slog.log('subject_blocked', 'BLOCKED', 403); return json(env, { error: BLOCKED_MESSAGE, code: 'BLOCKED' }, 403); }
     if (externalOff(env) && (role === 'external' || url.pathname === '/confirm' || url.pathname.startsWith('/api/library/confirmations'))) {
@@ -286,7 +338,22 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     // Forwarded identity: the library identity (Entra: stable tid:oid; Access: the verified email) and the verified
     // email when it is a valid address (else empty). Always overwritten on every forward.
     const libraryUser = String(env.IDENTITY_SOURCE === 'entra' ? who.sub : who.email || who.sub).toLowerCase(), mail = validEmail(who.email);
-    const identity = { name: who.email, mode: env.IDENTITY_SOURCE === 'entra' ? 'entra' : 'access', subjectKey };
+    const boundSubject = await boundSubjectKey(env, who.sub);
+    const boundEmail = await boundEmailKey(env, who.email);
+    const identity = { name: who.email, mode: env.IDENTITY_SOURCE === 'entra' ? 'entra' : 'access', subjectKey, boundSubject, ...(boundEmail ? { boundEmail } : {}) };
+    // A navigation has no bound header. It is how the next document is established as the current JWT.
+    const navigation = request.method === 'GET' && (url.pathname === '/' || url.pathname === '/confirm' || url.pathname === '/privacy' || url.pathname.startsWith('/go/'));
+    let acceptedProtocol = '';
+    if (!navigation) {
+      const bound = identityMismatch(request, boundSubject, boundEmail || '');
+      if (bound.mismatch) {
+        slog.log('identity_changed', 'IDENTITY_CHANGED', 409);
+        return json(env, IDENTITY_CHANGED, 409);
+      }
+      acceptedProtocol = bound.protocol;
+    }
+    // After the bound-key check. A presented key against an unminted subject is an identity mismatch, not this 503.
+    if (subjectKey === null) return json(env, { error: 'This deployment cannot record a subject pseudonym until LOG_SALT is set.', code: 'LOG_SALT' }, 503);
     if (role === 'external') {
       // External confirmers (F3) reach only /confirm, a reduced bootstrap and /api/library/confirmations/*.
       if (url.pathname === '/' && request.method === 'GET') return new Response(null, { status: 303, headers: headers(env, { Location: '/confirm' }) });
@@ -312,7 +379,7 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
     }
     if (url.pathname === '/' && request.method === 'GET') {
-      const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });
+      const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email, boundSubject, ...(boundEmail ? { boundEmail } : {}) });
       let body = page.replace(/<script id="atlas-runtime" type="application\/json">[\s\S]*?<\/script>/, block)
         .replace("connect-src 'self';", "connect-src 'self' " + connectOrigin(env) + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
@@ -365,13 +432,17 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426, headers: headers(env) });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
       const forward = new Request(request, { headers: new Headers(request.headers) });
+      stripBound(forward.headers);
       forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required before this interview can open. The subject-only object was not read.' }, 403);
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); // server-derived; the browser never picks a bank
       forward.headers.set('x-atlas-csrf', csrf); // set by the Worker only; the DO is not reachable otherwise
-      return env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
+      const upgraded = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
+      if (!acceptedProtocol) return upgraded;
+      // Echo the one accepted token. A browser drops the socket when an offered protocol is not answered.
+      return new Response(null, { status: 101, webSocket: upgraded.webSocket, headers: { 'Sec-WebSocket-Protocol': acceptedProtocol } });
     }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
       if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
@@ -399,6 +470,7 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       if (request.method !== 'GET') { const refused = sessionGuard(); if (refused) return refused; }
       if (Number(request.headers.get('Content-Length') || 0) > 131072) return json(env, { error: 'Request too large.' }, 413);
       const forward = new Request(request, { headers: new Headers(request.headers) });
+      stripBound(forward.headers);
       const scope = continuityScope(env, who.sub, tenant);
       if (!scope.ok) return json(env, { error: 'A verified tenant is required before memory can open. The subject-only bank was not read.' }, 403);
       forward.headers.set('x-atlas-bank', await bankId(env, who.sub, scope.tenant)); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
@@ -416,6 +488,7 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
         return json(env, { error: 'A verified tenant is required.' }, 403);
       }
       const fwdHeaders = new Headers(request.headers); fwdHeaders.delete('content-length');
+      stripBound(fwdHeaders);
       const forward = new Request(request.url, { method: request.method, headers: fwdHeaders, body: bodyless ? undefined : bytes });
       // Entra: the stable tid:oid is the library identity (emails can change); Access: the verified email.
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
