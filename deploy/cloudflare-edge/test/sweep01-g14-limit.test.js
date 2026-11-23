@@ -332,6 +332,20 @@ test('an aborted receipt post does not insert and does not return a receipt', as
   assert.notEqual(body.recorded, 1);
 });
 
+test('an abort that lands while the body is read does not insert and does not return a receipt', async () => {
+  const sql = memorySql();
+  const lib = new Library(sql, { now: () => '2026-11-21T00:00:00.000Z' });
+  const ac = new AbortController();
+  const req = receiptRequest(ac.signal);
+  const read = req.json.bind(req);
+  req.json = async () => { const body = await read(); ac.abort(); return body; };
+  const res = await libraryRoutes(req, lib);
+  const body = await res.json();
+  assert.equal(receiptRows(sql).length, 0, 'an abort during the body read must not insert a receipt');
+  assert.notEqual(res.status, 200, 'an abort during the body read must not answer 200');
+  assert.notEqual(body.recorded, 1);
+});
+
 test('a live receipt post still inserts one row', async () => {
   const sql = memorySql();
   const lib = new Library(sql, { now: () => '2026-11-21T00:00:00.000Z' });

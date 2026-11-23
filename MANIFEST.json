@@ -1727,8 +1727,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sweep01-g14-limit.test.js",
-      "bytes": 21610,
-      "sha256": "7ed973844cdbd99ffc29103cb5795f88c50f010b912a255c82cfe41510efeb58"
+      "bytes": 22329,
+      "sha256": "9beeece687107bf135a4d2e0ffad71c8a579302cc3a60747142de4a54fa64ba5"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
