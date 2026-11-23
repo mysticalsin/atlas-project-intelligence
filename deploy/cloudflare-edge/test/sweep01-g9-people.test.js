@@ -270,6 +270,45 @@ test('M2 the thirty-first distinct lookup in a day is refused after eviction', a
   assert.equal((await people(adminNext, admin, 'a30@example.test')).status, 404);
 });
 
+test('a reviewer is exempt from the daily lookup cap after eviction', async () => {
+  const { sql, lib } = open();
+  const reviewer = caller('reviewer', 'reviewer@example.test');
+  for (let i = 0; i < 30; i++) {
+    assert.equal((await people(lib, reviewer, 'r' + i + '@example.test')).status, 404, 'slot ' + i);
+  }
+  const evicted = again(sql);
+  const over = await people(evicted, reviewer, 'r30@example.test');
+  assert.equal(over.status, 404);
+  assert.equal(JSON.stringify(over.body).includes('Too many lookups'), false);
+});
+
+test('a refs tenant column in another tenant does not unlock a story state in this tenant', async () => {
+  const { lib } = open();
+  const user = caller();
+  directory(lib, TENANT, { email: 'split@example.test', name: 'Split Person', title: 'Lead', manager: '' });
+  directory(lib, TENANT, { email: 'same@example.test', name: 'Same Person', title: 'Lead', manager: '' });
+  story(lib, {
+    id: 'split-tenant', owner: 'editor@example.test', tenant: TENANT, updatedBy: 'editor@example.test',
+    sharedWith: [user.email],
+    consultants: [{ name: 'Split Person', email: 'split@example.test', role: 'Lead' }],
+  });
+  sqlOf(lib).exec('UPDATE refs SET tenant = ? WHERE id = ?', OTHER, 'split-tenant');
+  const state = JSON.parse(lib.rows('SELECT state FROM refs WHERE id = ?', 'split-tenant')[0].state);
+  assert.equal(state.tenant, TENANT);
+  assert.equal(lib.rows('SELECT tenant FROM refs WHERE id = ?', 'split-tenant')[0].tenant, OTHER);
+  story(lib, {
+    id: 'same-tenant', owner: 'editor@example.test', tenant: TENANT, updatedBy: 'editor@example.test',
+    sharedWith: [user.email],
+    consultants: [{ name: 'Same Person', email: 'same@example.test', role: 'Lead' }],
+  });
+  const split = await people(lib, user, 'split@example.test');
+  assert.equal(split.status, 403);
+  assert.equal(JSON.stringify(split.body).includes('Split Person'), false);
+  const same = await people(lib, user, 'same@example.test');
+  assert.equal(same.status, 200);
+  assert.equal(same.body.name, 'Same Person');
+});
+
 test('L2 one caller lookups do not spend the other caller cap', async () => {
   const { sql, lib } = open();
   const first = caller('user', 'ada@example.test');

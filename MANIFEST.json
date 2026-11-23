@@ -1732,8 +1732,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/sweep01-g9-people.test.js",
-      "bytes": 23241,
-      "sha256": "72ea64a22cbd14fdf3568b59d66e8608ffec5589068321b9cb625dff4cca23ea"
+      "bytes": 25275,
+      "sha256": "3d32f31b491dd64971117cac64b3d830d9db5494d5c279c41fc77092c114f594"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
@@ -2297,8 +2297,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 350748,
-      "sha256": "8e38a471e2968bcc61fa6c8b203b6c4df87354fc558ba77079f693c718810a90"
+      "bytes": 352970,
+      "sha256": "9946d40ccd1e7d71da421246fa8eaeb3756b8edf5a421b4a6f8c2db188370c24"
     },
     {
       "path": "handoff/CHANGELOG.md",
