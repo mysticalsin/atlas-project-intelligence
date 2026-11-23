@@ -1,6 +1,9 @@
 // Project reference sheet (Amaris/Mantu template): document ingestion (Workers AI toMarkdown), drafting of the
 // Executive Summary and the eight-section fact sheet with challenge questions, and key-visual suggestions.
 // Nothing is invented: unsupported fields are "To be completed". Known client details are scrubbed before any model.
+import { maskOwnClient } from './name-match.js';
+import { contactLead } from './review.js';
+
 export const TBD = 'To be completed';
 export const EXEC = ['summary', 'teamSize', 'duration', 'price', 'contacts'];
 export const SECTIONS = ['industry', 'issue', 'scope', 'methodology', 'deliverables', 'tools', 'team', 'value'];
@@ -42,10 +45,10 @@ Output exactly one JSON object: {"selected": [{"index": 0, "approach": true, "wh
 
 const str = (v, n) => typeof v === 'string' ? v.replace(/\r/g, '').trim().slice(0, n) : '';
 function parseJSON(text) { if (typeof text !== 'string') return null; const a = text.indexOf('{'), b = text.lastIndexOf('}'); if (a < 0 || b <= a) return null; try { return JSON.parse(text.slice(a, b + 1)); } catch { return null; } }
-export function scrub(text, names) {
-  const list = (names || []).map(n => String(n || '').trim()).filter(n => n.length >= 3);
-  if (!list.length) return String(text || '');
-  return String(text || '').replace(new RegExp(list.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi'), 'the client');
+export function scrub(text, client) {
+  const c = client && typeof client === 'object' && !Array.isArray(client) ? client : {};
+  const src = typeof text === 'string' ? text : String(text ?? '');
+  return maskOwnClient(c, contactLead(c.contact))(src);
 }
 
 export function parseDraft(text) {
@@ -58,14 +61,14 @@ export function parseDraft(text) {
 }
 
 export function draftMessages(input) {
-  const i = input && typeof input === 'object' ? input : {}, names = [i.client?.name, i.client?.location, i.client?.contact];
+  const i = input && typeof input === 'object' ? input : {};
   const material = {
     project: i.project && typeof i.project === 'object' ? i.project : {},
     current_sheet: i.current && typeof i.current === 'object' ? i.current : {},
     consultant_answers_to_challenges: str(i.answers, 6000),
     source_document: str(i.documentText, MAX_TEXT),
   };
-  return [{ role: 'system', content: SHEET_POLICY }, { role: 'user', content: scrub(JSON.stringify(material), names) }];
+  return [{ role: 'system', content: SHEET_POLICY }, { role: 'user', content: scrub(JSON.stringify(material), i.client) }];
 }
 
 export function parseVisuals(text, count) {

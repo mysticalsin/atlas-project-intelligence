@@ -25,16 +25,16 @@ test('word boundaries: GE masked in "GE Vernova", never inside "manaGEment"', as
   assert.equal(recordText(l)('GE Vernova improved manaGEment reporting'), 'another client Vernova improved manaGEment reporting');
   const m = nameMatcher(['GE']);
   assert.equal(m('GE, GE. (GE) GEnerator ge', () => 'X'), 'X, X. (X) GEnerator ge', 'short names: stored and upper-case forms only');
-  assert.equal(nameMatcher(['Air'])('We did the repair of the queue with Air and AIR.', () => 'X'), 'We did the repair of the queue with X and X.');
+  assert.equal(nameMatcher(['Air'])('We did the repair of the queue with air, Air and AIR.', () => 'X'), 'We did the repair of the queue with X, X and X.');
 });
 
-test('case rules: stoplist words and short names are case-sensitive; other names of 5+ characters are not', async () => {
+test('case rules: a name of 3 or more characters is case-insensitive, including a single stoplist word; a name of 2 stays stored-form and upper-case', async () => {
   const l = await lib([{ name: 'Total', contact: 'Will' }, { name: 'Orange', contact: 'Mark' }, { name: 'Zebracorp', contact: 'Jane Doe' }]);
   const rt = recordText(l);
-  assert.equal(rt('The total cost of ownership fell.'), 'The total cost of ownership fell.');
+  assert.equal(rt('The total cost of ownership fell.'), 'The another client cost of ownership fell.');
   assert.equal(rt('Total and TOTAL signed.'), 'another client and another client signed.');
-  assert.equal(rt('Total cost fell.'), 'another client cost fell.', 'a stoplist name at a sentence start is masked: the documented safe side');
-  assert.equal(rt('orange juice for Orange'), 'orange juice for another client');
+  assert.equal(rt('Total cost fell.'), 'another client cost fell.');
+  assert.equal(rt('orange juice for Orange'), 'another client juice for another client');
   assert.equal(rt('zebracorp, ZEBRACORP and Zebracorp'), 'another client, another client and another client');
   assert.equal(rt('the supplier will ask Mark and Will'), 'the supplier will ask Mark and Will', 'single-token stoplist contacts are skipped');
   assert.equal(rt('jane doe and JANE DOE'), 'a contact and a contact');

@@ -3,6 +3,8 @@
 // value and activities presented as outcomes. The agent never sees confidential client details.
 // A record is 'ready' only with the agent's review, a score at or above the threshold and no blocker.
 
+import { maskOwnClient } from './name-match.js';
+
 export const READY_SCORE = 75;
 const TOPIC = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'];
 export const ISSUE_FIELDS = [...TOPIC, 'deliverables', 'general'];
@@ -59,17 +61,13 @@ export function contactLead(contact) {
   return lead !== s ? lead : '';
 }
 
-// The record's own client name, location and contact (3+ characters) become "the client": case-insensitive, and
-// Unicode word-bounded so a client named "Air" never rewrites "repair". Longest names first; compared in NFC.
-// A contact's leading name counts too when it has several words ("Jane Doe (Head of Claims)" -> "Jane Doe"). A
-// one-word lead ("Will (CFO)") is left to scrub.recordText, which applies the contact stoplist rule and runs after
-// this scrub on every model path: here, case-insensitive and without a stoplist, it would rewrite every "will".
+// The record's own client name and location become "the client" through maskOwnClient. A name of 3 or more
+// characters, including a stoplist word, is case-insensitive and Unicode word-bounded, so "Air" never rewrites
+// "repair". A name of 2 characters is only the stored spelling and the upper-case spelling. A one-word stoplist
+// contact such as "Will" is not a mask. A multi-word contact, and a contact lead that contains whitespace, still is.
 export function clientScrub(record) {
-  const lead = contactLead(record?.client?.contact);
-  const names = [...new Set([record?.client?.name, record?.client?.location, record?.client?.contact, /\s/.test(lead) ? lead : ''].map(x => String(x || '').normalize('NFC').trim()).filter(x => x.length >= 3))]
-    .sort((a, b) => b.length - a.length);
-  const re = names.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu') : null;
-  return s => typeof s === 'string' && re ? s.normalize('NFC').replace(re, 'the client') : s;
+  const mask = maskOwnClient(record?.client, contactLead(record?.client?.contact));
+  return s => (typeof s === 'string' ? mask(s) : s);
 }
 
 // Anonymised view for any model: no client details, and their words replaced wherever they appear. No consultant

@@ -188,7 +188,7 @@ export function recordView(lib, data) -> object     // forModel(data) with recor
 
 **Matching rules** (`nameMatcher`):
 - Unicode word-bounded on both sides: `(?<![\p{L}\p{N}])(?:…)(?![\p{L}\p{N}])`, flags `gu` (plus `i` for the case-insensitive set). Each name is regex-escaped, and internal whitespace becomes `\s+`. Longest names first. Names shorter than 2 characters are ignored.
-- **Case.** A name is matched case-insensitively only if it has at least 5 characters and is not a single `STOPLIST` word. Every other name matches only its stored form and its upper-case form. So client "Total" masks "Total" and "TOTAL" but not "total cost of ownership", and "Orange" does not touch "orange juice". A stoplist-word name at the start of a sentence ("Total cost…") is still masked; over-masking is the safe direction and is documented.
+- **Case.** A client name of 3 or more characters, including a single `STOPLIST` word, is matched case-insensitively as a whole word. Client "Total" masks "total" in "total cost of ownership", and "Orange" masks "orange" in "orange juice". A name of 2 characters stays the stored spelling and the upper-case spelling.
 - **Contacts.** A single-token contact that is a `STOPLIST` word or shorter than 3 characters is skipped, so a contact typed as "Will" or "Mark" never rewrites "the supplier will".
 - **PII:** emails; URLs (`https?://…` or `www.…`); phone numbers (7+ digits allowing `+ ( ) - . space`).
 - **Placeholder neutralising.** Before pseudonymising, user text matching `/\[(company|person|email|phone|link)(\s+\d+)?\]/gi` loses its square brackets, so a user can never type the masked form of a name and compare results.
@@ -530,7 +530,7 @@ An F3 claim `(topic t, text s)` corresponds to snippet `A{t+1}.{n+1}` exactly wh
 #### F1.10 Tests
 - **`test/scrub.test.js`** (T1-S0):
   - word boundaries: `GE` masked in "GE Vernova", not in "manaGEment";
-  - case rules: client "Total" vs "total cost", "Orange" vs "orange juice", "Zebracorp" vs "zebracorp" (masked), contact "Will" vs "the supplier will";
+  - case rules: client "Total" masks "total" in "total cost", "Orange" masks "orange" in "orange juice", "Zebracorp" vs "zebracorp" (masked), contact "Will" vs "the supplier will" (unmasked);
   - multi-word names with irregular spacing; longest-first ordering;
   - emails, phones and URLs;
   - pseudonymise → unmask round trip; identical spans share a placeholder; typed placeholders are neutralised;
