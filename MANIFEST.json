@@ -712,8 +712,8 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32280,
-      "sha256": "64703a342eb201da3f93a54666b852eeecc8b76eb9c9d7376342735e120991d5"
+      "bytes": 32309,
+      "sha256": "cf77b98c5f88803ab86b9c00691158f34397a9d899e2df86ff5a5a37282ff681"
     },
     {
       "path": "atlas_voice/config.py",
