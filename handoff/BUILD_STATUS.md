@@ -1,6 +1,14 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 — ATLAS-CHECKHANDOFF-DEV-EXCLUDES
+
+Dev-mode trailing-slash excludes in `manifest_allows_path` matched a directory segment anywhere (`('/' + bare + '/') in ('/' + rel)`), so exclude `b/` allowed `a/b/c`. The match is exact or a child prefix only: `rel == bare` or `rel.startswith(bare + '/')`. Exclude `b/` allows `b` and `b/c`. It does not allow `ab/c` or `a/b/c`. Package mode still ignores a trailing-slash exclude.
+
+Red test is `eee83e0651d0ffe4e8b34998360f9586516b5d99` (test only; `MANIFEST.json` not refreshed). `python3 -m pytest tests/test_handoff.py::test_dev_trailing_slash_exclude_is_exact_or_prefix -q` there: 1 failed, exit 1. The failure is `a/b/c` allowed. The guard is this commit.
+
+Touched: `tests/test_handoff.py`, `scripts/check_handoff.py`, `handoff/BUILD_STATUS.md`, `MANIFEST.json`. No provider calls and no deploy.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.

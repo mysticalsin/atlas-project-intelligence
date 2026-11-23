@@ -308,7 +308,7 @@ def manifest_allows_path(rel: str, excludes: list, *, package_mode: bool) -> boo
             if package_mode:
                 continue
             bare = item.rstrip('/')
-            if rel == bare or rel.startswith(item) or ('/' + bare + '/') in ('/' + rel):
+            if rel == bare or rel.startswith(bare + '/'):
                 return True
         elif rel == item:
             return True
