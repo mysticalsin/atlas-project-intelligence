@@ -5,7 +5,9 @@
 
 Dev-mode trailing-slash excludes in `manifest_allows_path` matched a directory segment anywhere (`('/' + bare + '/') in ('/' + rel)`), so exclude `b/` allowed `a/b/c`. The match is exact or a child prefix only: `rel == bare` or `rel.startswith(bare + '/')`. Exclude `b/` allows `b` and `b/c`. It does not allow `ab/c` or `a/b/c`. Package mode still ignores a trailing-slash exclude.
 
-Red test is `eee83e0651d0ffe4e8b34998360f9586516b5d99` (test only; `MANIFEST.json` not refreshed). `python3 -m pytest tests/test_handoff.py::test_dev_trailing_slash_exclude_is_exact_or_prefix -q` there: 1 failed, exit 1. The failure is `a/b/c` allowed. The guard is this commit.
+Red test is `eee83e0651d0ffe4e8b34998360f9586516b5d99` (test only; `MANIFEST.json` not refreshed). `python3 -m pytest tests/test_handoff.py::test_dev_trailing_slash_exclude_is_exact_or_prefix -q` there: 1 failed, exit 1. The failure is `a/b/c` allowed. The guard is `4ef7b7fa0e2d0e8c345f04bb029abf1943679517`.
+
+On that guard, `python3 -m pytest tests/test_handoff.py -q`: 144 passed, 3.33s, exit 0. This note is after that run. `MANIFEST.json` is regenerated after this paragraph (697 entries).
 
 Touched: `tests/test_handoff.py`, `scripts/check_handoff.py`, `handoff/BUILD_STATUS.md`, `MANIFEST.json`. No provider calls and no deploy.
 
