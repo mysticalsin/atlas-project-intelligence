@@ -34,7 +34,7 @@ function cleanValidation(v){v=v&&typeof v==='object'?v:{};const m=v.manager&&typ
  return {manager:{name:text(m.name,100).trim(),email:/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)?email:''},managerStaff:v.managerStaff===true,status:VALIDATION.includes(v.status)?v.status:'none',notifiedAt:text(v.notifiedAt,40),validatedAt:text(v.validatedAt,40),by:text(v.by,100)};}
 // Backstop to the report prompt: any client detail recorded on the project is replaced in the report before it is stored.
 function scrubReport(r,client){if(!r)return r;const names=[client?.name,client?.location,client?.contact].map(x=>String(x||'').trim()).filter(x=>x.length>=3);if(!names.length)return r;
- const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),re=new RegExp(names.map(esc).join('|'),'gi'),fix=v=>typeof v==='string'?v.replace(re,'the client'):v;
+ const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),re=new RegExp(names.map(n=>'\\b'+esc(n)+'\\b').join('|'),'gi'),fix=v=>typeof v==='string'?v.replace(re,'the client'):v;
  const facts=r.facts?Object.fromEntries(Object.entries(r.facts).map(([k,v])=>[k,Array.isArray(v)?v.map(fix):fix(v)])):r.facts;
  return {...r,headline:fix(r.headline),summary:fix(r.summary),topics:Object.fromEntries(Object.entries(r.topics).map(([k,v])=>[k,fix(v)])),highlights:r.highlights.map(fix),gaps:r.gaps.map(fix),follow_ups:r.follow_ups.map(fix),facts};}
 function requestValidation(p){const v=p.validation;v.status='awaiting';v.notifiedAt='';v.validatedAt='';v.by='';

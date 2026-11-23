@@ -508,7 +508,7 @@ window.ATLAS_VOICE_BRIDGE={context:voiceSnapshot,renderReport,autoSave,memorySta
 // Append checked notes to the six answers, each topic bounded at 6,000 characters. Throws rather than truncating.
 function appendSections(answers,sections,tooLong='This addition would exceed the topic limit. Shorten the checked notes first.'){
  const updated=answers.slice();
- sections.forEach((value,i)=>{if(value===null)return;if(typeof value!=='string'||value.length>6000)throw Error('Invalid candidate note.');const v=value.trim();if(!v)return;const combined=updated[i].trim()+(updated[i].trim()?'\n\n':'')+v;if(combined.length>6000)throw Error(tooLong);updated[i]=combined;});
+ sections.forEach((value,i)=>{if(value===null)return;if(typeof value!=='string'||value.length>6000)throw Error('Invalid candidate note.');const v=value.trim();if(!v)return;const current=updated[i].trim();if(current===v||current.split('\n\n').includes(v))return;const combined=current+(current?'\n\n':'')+v;if(combined.length>6000)throw Error(tooLong);updated[i]=combined;});
  return updated;}
 const firstOpenTopic=p=>{const i=p.answers.findIndex((v,j)=>!v.trim()||p.deferred[j]);return i<0?6:i;};
 function applyNotes(snapshot,sections,report,reason='Appended human-checked voice ASR candidate notes; evidence and permissions require review'){
