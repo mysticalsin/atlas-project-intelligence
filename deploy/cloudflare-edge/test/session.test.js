@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { Session, projectContext, talkerMessages, paceNotes, MAX_SECONDS, TIME_UP, RESUME as RESUME_TEXT, STILL_THINKING, THINKING_PAUSE, clearPcmCache } from '../src/session.js';
 import { GREETINGS, FILLERS } from '../src/languages.js';
@@ -234,6 +234,49 @@ test('ATLAS ends the interview: end token never spoken or shown, wrap_up after p
   assert.ok(kinds.indexOf('reporting') < kinds.indexOf('notes'));
   assert.equal(notes.report.headline, 'Claims triage rebuilt'); assert.equal(notes.report.status, 'model_draft'); assert.equal(notes.report.topics.context, '');
   assert.ok(JSON.parse(h.calls.report[1].content).interview_transcript.includes('Consultant: That is everything, I am done.'));
+});
+test('report timer abort is metric Timeout and returns null; another error is not Timeout', async () => {
+  const ledger = { transcripts: new Map([['t1', 'We rebuilt the claims intake for the region.']]), notes: () => [], stage: 'Pilot' };
+  const metrics = [];
+  let attempts = 0;
+  const h = harness([], {
+    session: { metric: (kind, fields) => metrics.push({ kind, ...fields }) },
+    report(_messages, opts) {
+      attempts += 1;
+      const signal = opts?.signal;
+      if (!signal) return Promise.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      return new Promise((_, reject) => signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+    },
+  });
+  h.s.ledger = ledger;
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const pending = h.s.report();
+    mock.timers.tick(25000);
+    assert.equal(await pending, null);
+  } finally { mock.timers.reset(); }
+  assert.deepEqual(metrics.filter(m => m.kind === 'report_error'), [{ kind: 'report_error', name: 'Timeout', attempt: 1 }]);
+  assert.equal(attempts, 1);
+
+  const plain = [];
+  let plainAttempts = 0;
+  const g = harness([], {
+    session: { metric: (kind, fields) => plain.push({ kind, ...fields }) },
+    async report() { plainAttempts += 1; throw new Error('model refused the draft'); },
+  });
+  g.s.ledger = ledger;
+  assert.equal(await g.s.report(), null);
+  assert.equal(plainAttempts, 2);
+  assert.deepEqual(plain.filter(m => m.kind === 'report_error').map(m => m.name), ['Error', 'Error']);
+
+  const word = [];
+  const w = harness([], {
+    session: { metric: (kind, fields) => word.push({ kind, ...fields }) },
+    async report() { throw new Error('timeout'); },
+  });
+  w.s.ledger = ledger;
+  assert.equal(await w.s.report(), null);
+  assert.ok(word.filter(m => m.kind === 'report_error').every(m => m.name !== 'Timeout'));
 });
 test('report failure keeps the notes and sends report null', async () => {
   const h = harness(undefined, { async report() { throw new Error('model down'); } });

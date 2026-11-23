@@ -270,6 +270,40 @@ test('DNA pull: mapped fields only, header-only secret, manual redirects, 3xx / 
   assert.equal(profile.DNA_TIMEOUT_MS, 2500);
 });
 
+test('DNA pull: the timer abort is lastError timeout, and a different timeout message is not', async () => {
+  const outcome = async (reply, { timeoutMs } = {}) => {
+    const w = world();
+    const p = await profile.resolveProfile(w.l, PULL, who(ALEX), {}, { fetcher: reply, timeoutMs });
+    return { p, l: w.l };
+  };
+  const pullError = async lib => (await call(lib, ADMIN, 'GET', 'directory', null, PULL)).body.sources.pull.lastError;
+  // The pull timer rejects in the same turn as abort(). The awaited fetcher's abort
+  // rejection is one job later, so Promise.race keeps the English 'timeout' error.
+  // Hold that rejection for one extra turn so the abort error is the one that is caught.
+  const origThen = Promise.prototype.then;
+  Promise.prototype.then = function(onFulfilled, onRejected) {
+    if (typeof onRejected !== 'function') return origThen.call(this, onFulfilled, onRejected);
+    return origThen.call(this, onFulfilled, function(reason) {
+      if (reason && reason.message === 'timeout') return origThen.call(Promise.resolve(), () => onRejected.call(this, reason));
+      return onRejected.apply(this, arguments);
+    });
+  };
+  try {
+    const hang = (_url, init) => new Promise((_, no) => init.signal.addEventListener('abort', () => no(new Error('aborted'))));
+    const aborted = await outcome(hang, { timeoutMs: 40 });
+    assert.equal(aborted.p.sources[0].state, 'error');
+    assert.equal(await pullError(aborted.l), 'timeout');
+    const abortError = (_url, init) => new Promise((_, no) => init.signal.addEventListener('abort', () => no(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }))));
+    assert.equal(await pullError((await outcome(abortError, { timeoutMs: 40 })).l), 'timeout');
+  } finally { Promise.prototype.then = origThen; }
+  const named = async () => { throw new Error('timeout'); };
+  assert.equal(await pullError((await outcome(named, { timeoutMs: 500 })).l), 'failed');
+  const earlyAbort = async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); };
+  assert.equal(await pullError((await outcome(earlyAbort, { timeoutMs: 500 })).l), 'failed');
+  const deaf = () => new Promise(() => {});
+  assert.equal(await pullError((await outcome(deaf, { timeoutMs: 40 })).l), 'timeout');
+});
+
 test('DNA pull: 24 h cache, a stale value is served while waitUntil refreshes; oid lookup in Entra mode; push configured -> never called', async () => {
   let n = 0, title = 'Data engineer';
   const t = world(), fetcher = async () => { n++; return dnaReply({ ...PERSON, job: { title } }); };
