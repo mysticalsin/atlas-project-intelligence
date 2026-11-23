@@ -795,6 +795,89 @@ describe('access identity change, required plan changes', { concurrency: false }
     });
   });
 
+  test('a secret that differs only in the first character is refused and the real secret is accepted', async () => {
+    // timingSafe starts at index 0. Skipping that index accepts a same-length secret that differs only there.
+    // The last-character case still passes under that skip, and so does a difference at index 8.
+    const flipFirst = value => (value[0] === 'a' ? 'b' : 'a') + value.slice(1);
+    const secret = 's3cret-value';
+    const bearer = flipFirst(secret);
+    assert.equal(bearer.length, secret.length);
+    assert.equal(bearer.slice(1), secret.slice(1));
+    assert.notEqual(bearer[0], secret[0]);
+    let opened = 0;
+    const triggerEnv = {
+      ...envFor({
+        idFromName: name => name,
+        get: () => ({ fetch: () => { opened += 1; return new Response('{"id":"x"}', { status: 201 }); } }),
+      }, binder({}).binding),
+      TRIGGER_SECRET: secret,
+      ATLAS_SYSTEM_TENANT: '11111111-1111-4111-8111-111111111111',
+    };
+    const trig = auth => handle(new Request(ORIGIN + '/api/triggers', {
+      method: 'POST',
+      body: '{"email":"a@b.co","reason":"project_end"}',
+      headers: { Authorization: 'Bearer ' + auth },
+    }), triggerEnv, '');
+    const acceptedBearer = await trig(secret);
+    const refusedBearer = await trig(bearer);
+    const ada = await established();
+    const csrf = ada.csrf;
+    const flippedCsrf = flipFirst(csrf);
+    assert.equal(flippedCsrf.length, csrf.length);
+    assert.equal(flippedCsrf.slice(1), csrf.slice(1));
+    assert.notEqual(flippedCsrf[0], csrf[0]);
+    const library = binder({ title: 'Ada library' });
+    const post = token => handle(new Request(ORIGIN + '/api/library', {
+      method: 'POST',
+      body: '{}',
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        Origin: ORIGIN,
+        'X-Atlas-CSRF': token,
+      },
+    }), envFor(library.binding, binder({}).binding), '');
+    const acceptedCsrf = await post(csrf);
+    const refusedCsrf = await post(flippedCsrf);
+    const minted = await subjectBound(ADA.sub);
+    const email = await emailBound(ADA.email);
+    const subjectFirst = flipFirst(minted);
+    assert.equal(subjectFirst.length, minted.length);
+    assert.equal(subjectFirst.slice(1), minted.slice(1));
+    assert.notEqual(subjectFirst[0], minted[0]);
+    assert.match(subjectFirst, /^[0-9a-f]{32}$/);
+    const boundLibrary = binder({ title: MARKER });
+    const boundInterview = binder({ title: MARKER });
+    const bound = await handle(new Request(ORIGIN + '/api/library/journey', {
+      headers: {
+        'cf-access-jwt-assertion': ada.token,
+        'X-Atlas-Bound-Subject': subjectFirst,
+        'X-Atlas-Bound-Email': email,
+      },
+    }), envFor(boundLibrary.binding, boundInterview.binding), '');
+    const got = await outcome(bound, boundLibrary.opened.concat(boundInterview.opened));
+    assert.deepEqual({
+      bearerAccepted: acceptedBearer.status,
+      bearerRefused: refusedBearer.status,
+      bearerOpened: opened,
+      csrfAccepted: acceptedCsrf.status,
+      csrfRefused: refusedCsrf.status,
+      libraryOpened: library.opened.length,
+      boundStatus: got.status,
+      boundOpened: got.opened,
+      boundCode: got.code,
+    }, {
+      bearerAccepted: 201,
+      bearerRefused: 401,
+      bearerOpened: 1,
+      csrfAccepted: 200,
+      csrfRefused: 403,
+      libraryOpened: 1,
+      boundStatus: 409,
+      boundOpened: [],
+      boundCode: 'IDENTITY_CHANGED',
+    });
+  });
+
   test('GET / embeds both bound keys and a library call with those keys succeeds', async () => {
     // The page is what the browser echoes. Bootstrap can still carry the keys after runtimeBlock drops them.
     const ada = await established();

@@ -812,6 +812,7 @@ describe('access identity change, clean console', { concurrency: false }, () => 
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(sandbox.AtlasAuth.mode, 'identity-changed');
     assert.deepEqual(errors, []);
+    assert.equal(document.getElementById('storageStatus'), null, 'a disconnected node is returned after the identity blank');
   });
 
   test('the storage observer copies the status and is disconnected by the blank', async () => {
@@ -937,6 +938,7 @@ describe('access identity change, clean console', { concurrency: false }, () => 
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(save.textContent, copied, 'the save control copied a status change after the identity blank');
     assert.equal(callbacks, afterBlank, 'the storage observer ran after the identity blank');
+    assert.equal(document.getElementById('storageStatus'), null, 'a disconnected node is returned after the identity blank');
     assert.ok(beforeBlank > 0);
     assert.deepEqual(errors, []);
   });
