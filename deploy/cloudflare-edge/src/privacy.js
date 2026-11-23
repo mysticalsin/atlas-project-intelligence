@@ -67,9 +67,9 @@ export async function loadState(storage) {
 }
 export const grantedIn = (state, purpose) => state?.purposes?.[purpose]?.granted === true;
 // Applies the wanted purposes to the state and returns what CHANGED (each entry is a receipt to write): a purpose never granted and not granted now changes nothing.
-// `beforeCommit(changes)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
+// `beforeCommit(changes, signal)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
 // without its receipt. Overlapping calls take one lock per storage object, including the receipt post. A beforeCommit that does not settle within
-// commitTimeoutMs (default 5000) skips the put, releases the lock, and rejects that grant.
+// commitTimeoutMs (default 5000) aborts `signal`, skips the put, releases the lock, and rejects that grant. The receipt post must observe `signal` and must not write after it aborts.
 const consentLocks = new WeakMap();
 const COMMIT_TIMEOUT_MS = 5000;
 
@@ -87,14 +87,21 @@ function withConsentLock(storage, fn) {
   });
 }
 
-function commitWithin(work, ms) {
+function commitTimeoutError() {
+  return Object.assign(new Error('The consent receipt did not finish in time.'), { code: 'commit-timeout' });
+}
+
+function commitWithin(start, ms) {
   const limit = Number.isFinite(ms) && ms >= 0 ? ms : COMMIT_TIMEOUT_MS;
+  const ac = new AbortController();
+  const work = typeof start === 'function' ? start(ac.signal) : start;
   return new Promise((resolve, reject) => {
     let done = false;
     const timer = setTimeout(() => {
       if (done) return;
       done = true;
-      reject(Object.assign(new Error('The consent receipt did not finish in time.'), { code: 'commit-timeout' }));
+      ac.abort();
+      reject(commitTimeoutError());
     }, limit);
     Promise.resolve(work).then(value => {
       if (done) return;
@@ -124,23 +131,25 @@ async function applyStateLocked(storage, wanted, { mode = 'voice', channel = 'ap
     changes.push({ purpose: p, granted: want, mode, channel });
   }
   if (changes.length) {
-    if (beforeCommit) await commitWithin(beforeCommit(changes), commitTimeoutMs);
+    if (beforeCommit) await commitWithin(signal => beforeCommit(changes, signal), commitTimeoutMs);
     await storage.put(STATE_KEY, state);
   }
   return { state, changes };
 }
 // Appends receipts in the LibraryStore, server to server (the same internal path pattern as the evidence draft). `who`: {user, role, mail, subj} as the Worker verified them.
 // Without a library binding there is nowhere to keep receipts: nothing is written and the caller is told (receipted: false).
-export async function postReceipts(env, who, changes, channel = 'api') {
+export async function postReceipts(env, who, changes, channel = 'api', signal) {
+  if (signal?.aborted) throw commitTimeoutError();
   if (!env?.LIBRARY || !changes.length) return { receipted: false };
   const headers = new Headers({ 'Content-Type': 'application/json', 'x-atlas-user': String(who.user || ''), 'x-atlas-role': String(who.role || 'user'), 'x-atlas-email': String(who.mail || ''), 'x-atlas-subj': String(who.subj || '') });
-  const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/privacy/receipts', { method: 'POST', headers, body: JSON.stringify({ items: changes, channel }) }));
+  const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/privacy/receipts', { method: 'POST', headers, body: JSON.stringify({ items: changes, channel }), signal }));
+  if (signal?.aborted) throw commitTimeoutError();
   if (!res.ok) throw Object.assign(new Error('The consent receipt could not be recorded.'), { code: 'receipt-failed' });
   return { receipted: true };
 }
 // The one call the Interview Durable Object makes for a consent change: state plus receipts, all or nothing.
 export const recordConsent = (storage, env, who, wanted, { mode = 'voice', channel = 'api' } = {}) =>
-  applyState(storage, wanted, { mode, channel, beforeCommit: changes => postReceipts(env, who, changes, channel) });
+  applyState(storage, wanted, { mode, channel, beforeCommit: (changes, signal) => postReceipts(env, who, changes, channel, signal) });
 export async function setBlocked(storage, blocked) { const state = await loadState(storage); state.blocked = { ...state.blocked, ...blocked }; await storage.put(STATE_KEY, state); return state; }
 export const memoryAllowed = state => grantedIn(state, 'memory') && state?.blocked?.memory !== true;
 

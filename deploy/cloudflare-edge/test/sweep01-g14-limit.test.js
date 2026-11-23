@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { Library } from './hold.js';
 import { memorySql } from './sqlite.js';
 import { consume } from '../src/ratelimit.js';
-import { applyState, loadState } from '../src/privacy.js';
+import { applyState, loadState, postReceipts } from '../src/privacy.js';
+import { eraseMine } from '../src/subject-rights.js';
 import * as util from '../src/util.js';
 
 const DAY = 864e5;
@@ -206,6 +207,95 @@ test('a thrown put releases the rate-limit lock', async () => {
   await assert.rejects(() => consume(storage, check, { now: 100000, subj: 'person' }), /put failed/);
   failPut = false;
   assert.equal((await consume(storage, check, { now: 100000, subj: 'person' })).ok, true);
+});
+
+test('a hit dated exactly one window ahead is held for one window and is not left in the future', () => {
+  const sql = memorySql();
+  const clock = { now: Date.parse('2026-11-21T00:00:00.000Z') };
+  const lib = libraryAt(sql, clock);
+  const key = 'ask:ada@example.test';
+  const windowMs = 60000;
+  sql.exec('CREATE TABLE rate_hits (bucket TEXT NOT NULL, at_ms INTEGER NOT NULL)');
+  sql.exec('INSERT INTO rate_hits (bucket, at_ms) VALUES (?, ?)', key, clock.now + windowMs);
+  assert.equal(util.rateLimit(lib, key, 1, windowMs), false, 'the boundary row still denies');
+  const dated = rowsOf(sql).filter(row => row.bucket === key);
+  assert.equal(dated.length, 1);
+  assert.ok(dated.every(row => row.at_ms <= clock.now), 'the boundary row is not left one window in the future');
+  clock.now += windowMs;
+  assert.equal(util.rateLimit(lib, key, 1, windowMs), true, 'after one window the clamped row no longer denies');
+});
+
+test('eraseMine removes rate_hits for the verified email and leaves another address', () => {
+  const sql = memorySql();
+  const clock = { now: Date.parse('2026-11-21T00:00:00.000Z') };
+  const lib = libraryAt(sql, clock);
+  const ada = 'ada@example.test';
+  const bob = 'bob@example.test';
+  assert.equal(util.rateLimit(lib, 'ask:' + ada, 5, 36e5), true);
+  assert.equal(util.rateLimit(lib, 'bid-create:tenant:' + ada, 5, 36e5), true);
+  assert.equal(util.rateLimit(lib, 'ask:' + bob, 5, 36e5), true);
+  const user = {
+    email: ada, mail: ada, role: 'user', tenantEnforced: true, subj: 'ab'.repeat(16),
+    tenant: 'abcdefab-cdef-4abc-8def-0123456789ab',
+  };
+  const out = eraseMine(lib, user, user.subj);
+  assert.equal(out.erased, true);
+  assert.equal(out.counts.rateHits, 2);
+  const after = rowsOf(sql);
+  assert.equal(after.some(row => row.bucket === 'ask:' + ada || row.bucket === 'bid-create:tenant:' + ada), false);
+  assert.equal(after.some(row => row.bucket === 'ask:' + bob), true);
+});
+
+test('a late beforeCommit after timeout does not write a receipt', { timeout: 1000 }, async () => {
+  let stored;
+  const storage = {
+    async get() { return stored ? structuredClone(stored) : undefined; },
+    async put(_key, next) { stored = structuredClone(next); },
+  };
+  let wrote = 0;
+  let started;
+  const gate = new Promise(resolve => { started = resolve; });
+  const env = {
+    LIBRARY: {
+      idFromName() { return 'id'; },
+      get() {
+        return {
+          async fetch(request) {
+            started();
+            await new Promise(resolve => setTimeout(resolve, 80));
+            if (request.signal?.aborted) return new Response('late', { status: 499 });
+            wrote += 1;
+            return new Response('ok', { status: 200 });
+          },
+        };
+      },
+    },
+  };
+  const who = { user: 'ada', role: 'user', mail: 'ada@example.test', subj: 'ab'.repeat(16) };
+  const pending = applyState(storage, { transcription: true }, {
+    commitTimeoutMs: 20,
+    channel: 'api',
+    beforeCommit: (changes, signal) => postReceipts(env, who, changes, 'api', signal),
+  });
+  await gate;
+  await assert.rejects(pending, err => err && err.code === 'commit-timeout');
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(wrote, 0, 'the receipt post does not write after the grant timed out');
+  assert.equal(stored, undefined, 'the timed-out grant stores nothing');
+  const fast = {
+    LIBRARY: {
+      idFromName() { return 'id'; },
+      get() { return { fetch: async () => new Response('ok', { status: 200 }) }; },
+    },
+  };
+  await applyState(storage, { draft: true }, {
+    commitTimeoutMs: 50,
+    channel: 'api',
+    beforeCommit: (changes, signal) => postReceipts(fast, who, changes, 'api', signal),
+  });
+  const state = await loadState(storage);
+  assert.equal(state.purposes.draft?.granted, true);
+  assert.notEqual(state.purposes.transcription?.granted, true);
 });
 
 test('L4 a beforeCommit that hangs releases the lock', { timeout: 500 }, async () => {

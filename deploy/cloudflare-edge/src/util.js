@@ -53,8 +53,9 @@ export function rateLimit(lib, key, max, windowMs) {
   const now = rateNow(lib);
   return lib.recorded(() => {
     lib.exec(RATE_CREATE);
-    // A row more than one window ahead is stored at `now`, so it counts until now + windowMs and is not left in the future.
-    lib.exec('UPDATE rate_hits SET at_ms = ? WHERE bucket = ? AND at_ms > ?', now, args.bucket, now + args.windowMs);
+    // A row at or beyond one window ahead is stored at `now`. A strict `>` left a row dated exactly
+    // now + windowMs in the future, and that row still counted for a second window.
+    lib.exec('UPDATE rate_hits SET at_ms = ? WHERE bucket = ? AND at_ms >= ?', now, args.bucket, now + args.windowMs);
     lib.exec('DELETE FROM rate_hits WHERE at_ms <= ?', now - RATE_DAY_MS);
     lib.exec('DELETE FROM rate_hits WHERE bucket = ? AND at_ms <= ?', args.bucket, now - args.windowMs);
     const n = Number(lib.rows('SELECT COUNT(*) AS n FROM rate_hits WHERE bucket = ? AND at_ms > ?', args.bucket, now - args.windowMs)[0].n);
