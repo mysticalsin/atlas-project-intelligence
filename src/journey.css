@@ -25,3 +25,8 @@
 .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
 .recording-live{margin:8px 0;padding:8px 12px;border:1px solid var(--p);border-radius:999px;max-width:100%;box-sizing:border-box}
 @media(max-width:800px){.stage-grid,.journey-layout,.metric-grid{grid-template-columns:1fr}.journey-head{display:block}.persona-switch{margin-top:12px}}
+/* Visible clickable controls and disclosure summaries meet a 44 px target. The skip link and step pips stay as they are. */
+button:not(.skip),summary,a.btn{min-height:44px!important}
+.steps button{min-height:0!important;height:5px;width:19px}
+.stage-tool,.close,.avatar{width:44px;height:44px;min-width:44px;min-height:44px!important}
+.connection-pill{min-height:44px!important}
