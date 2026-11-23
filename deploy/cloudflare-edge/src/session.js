@@ -706,12 +706,15 @@ export class Session {
     const t0 = this.now();
     for (let attempt = 1; attempt <= 2; attempt++) {
       let timer;
+      const ac = new AbortController(), timeoutErr = new Error('timeout');
+      timeoutErr.code = 'TIMEOUT';
+      const timedOut = e => e?.code === 'TIMEOUT' || (ac.signal.aborted && ac.signal.reason?.code === 'TIMEOUT' && (e?.name === 'AbortError' || e?.message === 'aborted'));
       try {
-        const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), attempt === 1 ? 25000 : 15000); });
-        const report = parseReport(await Promise.race([this.ai.report(reportMessages(this.history, this.ledger.notes(), this.ledger.stage)), timeout]));
+        const timeout = new Promise((_, reject) => { timer = setTimeout(() => { ac.abort(timeoutErr); reject(timeoutErr); }, attempt === 1 ? 25000 : 15000); });
+        const report = parseReport(await Promise.race([this.ai.report(reportMessages(this.history, this.ledger.notes(), this.ledger.stage), { signal: ac.signal }), timeout]));
         this.metric('report', { ms: Math.round((this.now() - t0) * 1000), ok: report ? 1 : 0, attempt });
         if (report) return report;
-      } catch (e) { this.metric('report_error', { name: e?.message === 'timeout' ? 'Timeout' : e?.name || 'Error', attempt }); if (e?.message === 'timeout') return null; }
+      } catch (e) { this.metric('report_error', { name: timedOut(e) ? 'Timeout' : e?.name || 'Error', attempt }); if (timedOut(e)) return null; }
       finally { clearTimeout(timer); }
     }
     return null;

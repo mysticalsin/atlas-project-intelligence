@@ -377,12 +377,18 @@ async function boundedText(res, max) {
   return new TextDecoder().decode(out);
 }
 const oidOf = subject => { const m = /^[0-9a-f-]{36}:([0-9a-f-]{36})$/.exec(String(subject || '')); return m ? m[1] : ''; };
+// The timer owns this error. An awaited fetch often rejects first with the abort, so the message is not a reliable check.
+function timerTimeout() { const err = new Error('timeout'); err.code = 'TIMEOUT'; return err; }
+function isTimerTimeout(e, signal) {
+  if (e?.code === 'TIMEOUT') return true;
+  return !!(signal?.aborted && signal.reason?.code === 'TIMEOUT' && (e?.name === 'AbortError' || e?.message === 'aborted'));
+}
 async function pull(lib, env, cfg, key, { fetcher, now, timeoutMs, tenant = '' }) {
-  const t0 = Date.now(), ac = new AbortController(), last = pullState.get(lib) || {};
+  const t0 = Date.now(), ac = new AbortController(), last = pullState.get(lib) || {}, timeoutErr = timerTimeout();
   let status = 0, timer;
   const scope = String(tenant || '').toLowerCase();
   const store = (row, outcome) => {
-    if (ac.signal.aborted) throw new Error('timeout');
+    if (ac.signal.aborted) throw timeoutErr;
     lib.housekeeping('dna-cache', () => lib.exec(`INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant)
       VALUES (?, 'dna', ?, ?, ?, ?, ?, 'pull', ?, ?)`, key, row.name, row.given_name, row.title, row.manager_name, row.manager_email, now, scope));
     return outcome;
@@ -404,11 +410,11 @@ async function pull(lib, env, cfg, key, { fetcher, now, timeoutMs, tenant = '' }
         manager_email: managerEmail !== value ? managerEmail : '' }, 'ok');
     })();
     work.catch(() => {}); // a late failure after the timeout is already reported below
-    const out = await Promise.race([work, new Promise((_, no) => { timer = setTimeout(() => { ac.abort(); no(new Error('timeout')); }, timeoutMs); })]);
+    const out = await Promise.race([work, new Promise((_, no) => { timer = setTimeout(() => { ac.abort(timeoutErr); no(timeoutErr); }, timeoutMs); })]);
     pullState.set(lib, { ...last, lastOkAt: now });
     return out;
   } catch (e) {
-    pullState.set(lib, { ...last, lastError: /^(HTTP \d+|DNA refused the key \(HTTP \d+\))/.exec(e.message)?.[0] || (e.message === 'timeout' ? 'timeout' : 'failed'), lastErrorAt: now });
+    pullState.set(lib, { ...last, lastError: /^(HTTP \d+|DNA refused the key \(HTTP \d+\))/.exec(e.message)?.[0] || (isTimerTimeout(e, ac.signal) ? 'timeout' : 'failed'), lastErrorAt: now });
     return 'error';
   } finally {
     clearTimeout(timer);
