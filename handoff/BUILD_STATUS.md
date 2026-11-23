@@ -1,6 +1,16 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 — timeout message match (`cursor/timeout-message-match-7da8`)
+
+The DNA pull and the interview report treated a rejection as a timeout only when `message` was the word `timeout`. The timer aborts the in-flight call, and that abort often rejects first (`aborted` or `AbortError`). The pull then stored `lastError` `failed`. The report metric was not `Timeout`, and the report was tried again.
+
+The timer error now has `code` `TIMEOUT` and is the abort reason. A rejection counts as a timeout when it carries that code, or when it is an abort caused by that timer. Another error whose message is the word `timeout` stays a normal failure. A timed-out report still returns null and is not retried. Other report errors still retry, then return null.
+
+Red `f9334f95d2d22e3d8c66c6f3196bb1786f7e72c2`. `node --test test/profile.test.js test/session.test.js` from `deploy/cloudflare-edge`: 132 tests, 130 pass, 2 fail, exit 1. The new pull assertion was `failed !== timeout`. The new report assertion was two `AbortError` metrics, not one `Timeout`.
+
+Fix `376f34300d3b1a277f70ad987bba27380e12512b`. The same command: 132 tests, 132 pass, 0 fail, exit 0, about 8.6s. No deploy. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
