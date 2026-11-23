@@ -83,6 +83,16 @@ def test_editor_preserves_exact_original_limits():
     st=story();d=edit(st);d['paragraphs'][5]['text']='Check transfer conditions before applying this lesson.'
     assert st['sections']['limitations'] in parse_edit(d,st)['candidate']['sections']['limitations']
 
+def test_second_refine_does_not_append_retained_limitations_again():
+    st=story();d=edit(st);d['paragraphs'][5]['text']='Check transfer conditions before applying this lesson.'
+    first=parse_edit(d,st)['candidate']
+    marker='Original scope and limitations (retained verbatim)'
+    assert first['sections']['limitations'].count(marker)==1
+    again=edit(first);again['paragraphs'][5]['text']='A shorter limitation note for the next pass.'
+    second=parse_edit(again,first)['candidate']['sections']['limitations']
+    assert second.count(marker)==1
+    assert second.count(st['sections']['limitations'])==1
+
 @pytest.mark.parametrize('bad',['source:secret','account:nonexistent'])
 def test_editor_rejects_invented_reference(bad):
     st=story();d=edit(st);d['paragraphs'][0]['refs']=[bad]
