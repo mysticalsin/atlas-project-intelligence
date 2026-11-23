@@ -1422,8 +1422,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 31251,
-      "sha256": "64e8e9a94bdc49dd11f19ff3d9e3bc42614eab9dcbce7bb2ca09667528649bee"
+      "bytes": 32187,
+      "sha256": "1f1c09331e6d3235c0a797d19aca739516b3da4161e7fcd0e472b1433cda864c"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
@@ -2256,6 +2256,56 @@
       "sha256": "539433097004d7c60ca526e287eb14d67ca7e466a6f9209d9cf81eb80798c68a"
     },
     {
+      "path": "docs/sweeps/s01/plans/INDEX.md",
+      "bytes": 12271,
+      "sha256": "19fc34426a8399a08f0cfe32c4c92624ebf348ac0256a468de2f8d1a438e9f79"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/SHA256SUMS",
+      "bytes": 753,
+      "sha256": "41cdeccfd907d7861172fe6b93a8ff90b7027e1adf80caf644c546ea447c1e9c"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-1-scrub-redaction.md",
+      "bytes": 17591,
+      "sha256": "70582a3fada7797417ab33346908e78d8292c294e26fff42050630292dd3a8d5"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-10-erasure-tenant.md",
+      "bytes": 25894,
+      "sha256": "7506c9ed4fc17788f8fcc1564d435d238dc34850e5c398ed86e40e681224f9cf"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-11-voice-prompt-transport.md",
+      "bytes": 12754,
+      "sha256": "6921436552fd4a28a2901c96e536a29b6734bdf0a723fd0d1a6f611a7e62f228"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-13-worker-auth-routing.md",
+      "bytes": 21216,
+      "sha256": "3a3abb94570879bc7572c6e2351d79cd017c5e77b7bff16876aa7f75362da610"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-14-rate-limit-consent.md",
+      "bytes": 16223,
+      "sha256": "66f3511b43736aef68614dc5d6e6f21c4d15f96072529af7c1ca30c53e083a1f"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-16-sign-in-state.md",
+      "bytes": 14888,
+      "sha256": "0fb91bfc15413ae61ebb6b096b4380b6ac50caa305ec8c478c83840de43be0f7"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-17-entra-bootstrap.md",
+      "bytes": 11663,
+      "sha256": "a88a653c43e822de3d00631ea8a75eb387c9cdcb497f8a068390bed3281a6c3e"
+    },
+    {
+      "path": "docs/sweeps/s01/plans/group-9-profile.md",
+      "bytes": 17103,
+      "sha256": "12c84ca137f63b1c5243d2a49ce1e8bbb678cf1e1c87d87b0db5938bf39415b0"
+    },
+    {
       "path": "examples/claude_customer_brief.json",
       "bytes": 334,
       "sha256": "14881dbe7cbb838e04034a56759479d23c8bb9da44a77d94f623e129799dac31"
@@ -2282,8 +2332,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348168,
+      "sha256": "2942ab90140c9b50a3667da2c59b3843bcdb22c5f31cb14669330ce988dd3052"
     },
     {
       "path": "handoff/CHANGELOG.md",
