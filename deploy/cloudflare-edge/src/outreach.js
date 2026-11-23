@@ -7,6 +7,24 @@
 import { Library } from './library.js';
 import { str, email, obj, fail, uuidish } from './util.js';
 import { TENANT_ID } from './authz.js';
+
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+// One normalizer for the ATLAS stamp on a Teams row. Ordinary space and NBSP trim away.
+// An empty result is null, never a blank string that could be mistaken for a tenant.
+export function atlasTenant(value) {
+  const text = String(value ?? '').replace(/\u00a0/g, ' ').trim();
+  return text ? text.toLowerCase() : null;
+}
+function trimAddressEdges(value) {
+  return String(value ?? '').replace(/^[ \u00a0]+|[ \u00a0]+$/g, '');
+}
+function formulaAddress(value) {
+  const text = String(value ?? '');
+  if (FORMULA_LEAD.test(trimAddressEdges(text))) return true;
+  if (text.startsWith("'") && FORMULA_LEAD.test(trimAddressEdges(text.slice(1)))) return true;
+  const parsed = email(text);
+  return !!(parsed && FORMULA_LEAD.test(trimAddressEdges(parsed)));
+}
 import { neutralizeFormula } from './csvsafe.js';
 import { recordText, forOthers } from './scrub.js';
 import * as claims from './claims.js';
@@ -66,7 +84,7 @@ const DDL = [
   'CREATE UNIQUE INDEX IF NOT EXISTS outreach_subject ON outreach(kind, subject_id, channel)',
   'CREATE INDEX IF NOT EXISTS outreach_status ON outreach(status, created_at)',
   `CREATE TABLE IF NOT EXISTS teams_conversations (subject TEXT PRIMARY KEY, aad_object_id TEXT, tenant_id TEXT, teams_user_id TEXT,
-    conversation_id TEXT, service_url TEXT, email TEXT, status TEXT, updated_at TEXT)`,
+    conversation_id TEXT, service_url TEXT, email TEXT, status TEXT, updated_at TEXT, atlas_tenant TEXT)`,
   'CREATE INDEX IF NOT EXISTS teams_conversations_email ON teams_conversations(email)',
   'CREATE TABLE IF NOT EXISTS teams_seen (activity_id TEXT PRIMARY KEY, at TEXT)',
 ];
@@ -85,7 +103,53 @@ export function ensure(lib) {
   const withKey = lib.rows("SELECT name FROM pragma_table_info('outreach')").map(r => r.name);
   if (withKey.length && !withKey.includes('idempotency_key')) Library.migrate(lib, 'outreach-idempotency');
   });
+  // ALTER and the formula purge are writes. schema() accepts CREATE only, so they run in the recorded door.
+  // A library that already has the column and no formula rows does not open a transaction.
+  if (needsTeamsStamp(lib) || needsFormulaPurge(lib)) {
+    const migrate = () => { addTeamsAtlasTenant(lib); purgeFormulaStaffing(lib); };
+    if (typeof lib.transactionSync === 'function') lib.transactionSync(migrate);
+    else migrate();
+  }
   ensured.add(lib);
+}
+function needsTeamsStamp(lib) {
+  if (!lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'teams_conversations'")[0]) return false;
+  return !lib.rows("SELECT 1 AS x FROM pragma_table_info('teams_conversations') WHERE name = 'atlas_tenant'")[0];
+}
+function needsFormulaPurge(lib) {
+  if (lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) {
+    for (const row of lib.rows('SELECT consultant_email, manager_email FROM staffing')) {
+      if (formulaAddress(row.consultant_email) || formulaAddress(row.manager_email)) return true;
+    }
+  }
+  if (!lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'manager_trust'")[0]) return false;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(row => row.name);
+  if (!cols.includes('source') || !cols.includes('email') || !cols.includes('owner')) return false;
+  for (const row of lib.rows("SELECT email, owner FROM manager_trust WHERE source = 'staffing'")) {
+    if (formulaAddress(row.email) || formulaAddress(row.owner)) return true;
+  }
+  return false;
+}
+export function addTeamsAtlasTenant(lib) {
+  if (!lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'teams_conversations'")[0]) return;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('teams_conversations')").map(row => row.name);
+  if (cols.includes('atlas_tenant')) return;
+  lib.exec('ALTER TABLE teams_conversations ADD COLUMN atlas_tenant TEXT');
+}
+function purgeFormulaStaffing(lib) {
+  if (lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'staffing'")[0]) {
+    for (const row of lib.rows('SELECT project_id, consultant_email, manager_email, tenant FROM staffing')) {
+      if (!formulaAddress(row.consultant_email) && !formulaAddress(row.manager_email)) continue;
+      lib.exec('DELETE FROM staffing WHERE project_id = ? AND consultant_email = ? AND tenant = ?', row.project_id, row.consultant_email, row.tenant);
+    }
+  }
+  if (!lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = 'manager_trust'")[0]) return;
+  const cols = lib.rows("SELECT name FROM pragma_table_info('manager_trust')").map(row => row.name);
+  if (!cols.includes('source') || !cols.includes('email') || !cols.includes('owner') || !cols.includes('tenant')) return;
+  for (const row of lib.rows("SELECT owner, email, tenant FROM manager_trust WHERE source = 'staffing'")) {
+    if (!formulaAddress(row.email) && !formulaAddress(row.owner)) continue;
+    lib.exec("DELETE FROM manager_trust WHERE owner = ? AND email = ? AND tenant = ? AND source = 'staffing'", row.owner, row.email, row.tenant);
+  }
 }
 
 const parsed = t => { try { return obj(JSON.parse(t)); } catch { return {}; } };
@@ -251,7 +315,7 @@ export function onTrigger(lib, actor, body, user) {
   if (caller?.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(caller.tenant || ''))) {
     throw fail(403, 'A verified tenant is required.');
   }
-  const tenant = caller?.tenantEnforced === true ? String(caller.tenant || '').toLowerCase() : '';
+  const tenant = atlasTenant(caller?.tenant) || '';
   if (!READY) return lib.invite(name, { ...body, source: name, tenant });
   ensure(lib);
   const b = obj(body), pid = assignmentProject(b.projectId), who = email(b.email), mgr = email(b.managerEmail);
@@ -321,7 +385,12 @@ function importCsv(lib, user, body) {
   const tenant = user.tenantEnforced === true ? String(user.tenant || '').toLowerCase() : '';
   const rejected = [...p.rejected], staffed = [];
   for (const r of p.rows) {
-    const cell = h => String(r.cells[idx[h]] ?? '').trim();
+    const raw = h => String(r.cells[idx[h]] ?? '');
+    if (formulaAddress(raw('consultant_email')) || formulaAddress(raw('manager_email'))) {
+      rejected.push({ line: r.line, error: 'A staffing address cannot start like a spreadsheet formula.' });
+      continue;
+    }
+    const cell = h => raw(h).trim();
     const projectId = str(cell('project_id'), 60), consultantEmail = email(cell('consultant_email')), mgrRaw = cell('manager_email'), managerEmail = email(mgrRaw), end = cell('end_date');
     const error = !projectId ? 'project_id is required.' : !consultantEmail ? 'consultant_email is not a valid email.' : mgrRaw && !managerEmail ? 'manager_email is not a valid email.'
       : managerEmail && managerEmail === consultantEmail ? 'The N+1 cannot be the consultant.' : end && !isoDate(end) ? 'end_date must be a real date written YYYY-MM-DD.' : '';
@@ -448,8 +517,9 @@ async function sendTeams(ctx, o) {
   // The conversation tenant_id is the Teams directory. o.tenant is the ATLAS tenant.
   // One active conversation with one directory id is the allowed mapping. Equality of the
   // two namespaces is not required. Several directories, or none, is refused.
-  const convs = lib.rows('SELECT * FROM teams_conversations WHERE email = ? ORDER BY updated_at DESC', o.to_email);
-  const active = convs.filter(c => c.status === 'active' && guid(c.tenant_id) && guid(c.aad_object_id) && c.conversation_id && /^https:/.test(String(c.service_url || '')));
+  const want = atlasTenant(o.tenant);
+  const convs = lib.rows('SELECT * FROM teams_conversations WHERE lower(email) = lower(?) ORDER BY updated_at DESC', o.to_email);
+  const active = convs.filter(c => c.status === 'active' && guid(c.tenant_id) && guid(c.aad_object_id) && c.conversation_id && /^https:/.test(String(c.service_url || '')) && want && atlasTenant(c.atlas_tenant) === want);
   const directories = new Set(active.map(c => String(c.tenant_id).toLowerCase()));
   const conv = active.length === 1 && directories.size === 1 ? active[0] : null;
   if (!conv) return setStatus(lib, o, 'blocked_external', convs.some(c => c.status === 'stopped') ? REASONS.stopped : REASONS.notInstalled, user, { approved: true });
@@ -592,6 +662,7 @@ export async function system(ctx) {
   if (kind === 'install' && (!service || !conversationId)) throw fail(400, 'An install event needs the conversation and its service URL.');
   const user = ctx.user || {};
   if (user.tenantEnforced === true && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
+  if (kind === 'install' && !atlasTenant(user.tenant)) throw fail(403, 'A verified tenant is required.');
   ensure(lib);
   const now = lib.now();
   if (kind === 'action') {
@@ -643,11 +714,12 @@ export async function system(ctx) {
   return recorded(lib, () => {
     lib.exec('INSERT OR IGNORE INTO teams_seen (activity_id, at) VALUES (?, ?)', activityId, now);
     if (kind === 'install') {
-      lib.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
+      lib.exec(`INSERT INTO teams_conversations (subject, aad_object_id, tenant_id, teams_user_id, conversation_id, service_url, email, status, updated_at, atlas_tenant)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT (subject) DO UPDATE SET aad_object_id = excluded.aad_object_id, tenant_id = excluded.tenant_id,
         teams_user_id = excluded.teams_user_id, conversation_id = excluded.conversation_id, service_url = excluded.service_url,
-        email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at`,
-      subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now);
+        email = CASE WHEN excluded.email != '' THEN excluded.email ELSE teams_conversations.email END, status = 'active', updated_at = excluded.updated_at,
+        atlas_tenant = excluded.atlas_tenant`,
+      subject, oid, tid, str(e.teamsUserId, 256), conversationId, service, email(e.email), now, atlasTenant(user.tenant));
       lib.log('teams', 'teams-bot', 'teams install', 'personal scope');
       return { body: { ok: true } };
     }

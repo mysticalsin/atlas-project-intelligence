@@ -1092,8 +1092,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
-      "bytes": 47116,
-      "sha256": "542013df8e28ff4e7ba19d35b8f640ccc6b5596ccba669e021fdba3848d869b9"
+      "bytes": 51564,
+      "sha256": "74458bc9859ff89166bf6b4e14e2e22826506ae36267ece71f238efd5fb74a77"
     },
     {
       "path": "deploy/cloudflare-edge/src/package.json",
@@ -1212,8 +1212,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29510,
-      "sha256": "855d2d781c72ced7c89918cc9df066fefbad9991e817842b7f3dbff87ff9f113"
+      "bytes": 32994,
+      "sha256": "d7bf46357e6dd9a10da8be9b281f0ec83e9fb9ccd077db6ef0086b191b3e6284"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -1412,8 +1412,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
-      "bytes": 4555,
-      "sha256": "5f6d85934d67e786fe17640eed1e0c62d932036465526681cf5a87bd4b28ce63"
+      "bytes": 4679,
+      "sha256": "9e8a192999424f81c033774ce2584e25a4ee12b9bfae189c00792b6d00f0574b"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-status.test.js",
@@ -1477,8 +1477,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/outreach.test.js",
-      "bytes": 37149,
-      "sha256": "768766be5deaee28a2689ca2cbb089303c86f1357e0d992463d71a3f83543e3e"
+      "bytes": 37477,
+      "sha256": "95cc4334386559a9989340f17af7157fc4cc54e9851a4aac18f238261113030a"
     },
     {
       "path": "deploy/cloudflare-edge/test/pace.test.js",
@@ -1512,8 +1512,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/policy.test.js",
-      "bytes": 138544,
-      "sha256": "18103612486673a972d0d22fafc33173fa6eb829a9bb95a4193b80530f7614f4"
+      "bytes": 138616,
+      "sha256": "aa18ba1f0ed8b70cc0d698ce3af859d06ed522b203035e46747761677c2bd634"
     },
     {
       "path": "deploy/cloudflare-edge/test/privacy-delete.test.js",
@@ -1577,8 +1577,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-09ada7d.test.js",
-      "bytes": 7449,
-      "sha256": "df509a98e71ea3ebb2827a7e7f402d18bddf90e12d56a14cc414a7a83ec95e8e"
+      "bytes": 7453,
+      "sha256": "6c05edf8776cba21c93b95712a677566b4950a9f29c824df7ad9cd5d7306efce"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-1fc76c8.test.js",
@@ -1617,8 +1617,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-afa7b8c.test.js",
-      "bytes": 15209,
-      "sha256": "d02c3accffcef5024cfdc74c76912cedc7b6a72ba16d1ed84786385c31a9a735"
+      "bytes": 15336,
+      "sha256": "48b42935edb79447f82b7c62b6109e7dd10063fc4d61c96de3b7bb62173102c4"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-b8df2ab-low.test.js",
@@ -1632,8 +1632,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-de9e44c.test.js",
-      "bytes": 10415,
-      "sha256": "fb0b4b5663dba6f290e9a22731e1f6421c04846708a15ced9e136c82de08703c"
+      "bytes": 10812,
+      "sha256": "05005881653d6eb34107e7ca069a866d75c4d179d6f55361ccdf12c17645179a"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-delta.test.js",
@@ -1652,8 +1652,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-review.test.js",
-      "bytes": 23033,
-      "sha256": "1d1f65c0f011bf9a2c8dfa0a608ecc53c428f6efce2f291ad4a71d03c439734c"
+      "bytes": 23102,
+      "sha256": "557ba8a73cebd298f2b48b50a9dd98998eee9b47180692bca452b2dae366a530"
     },
     {
       "path": "deploy/cloudflare-edge/test/s1-round.test.js",
@@ -1719,6 +1719,16 @@
       "path": "deploy/cloudflare-edge/test/sqlite.js",
       "bytes": 3391,
       "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-b-security.test.js",
+      "bytes": 5186,
+      "sha256": "7216ca049b18340716ba6365072fc9b049a0852af519cfbacf0045b53633ef5c"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-g10-erasure-props.test.js",
+      "bytes": 16049,
+      "sha256": "8785264d9cc43e63b84f1ed8a17283cad5b3f50fbddd97fc0e01cb44113af5c7"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",

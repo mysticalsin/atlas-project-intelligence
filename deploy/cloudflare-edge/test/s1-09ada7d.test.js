@@ -54,7 +54,7 @@ function snap(lib, id) {
 }
 async function install(lib, activityId) {
   return outreach.system({
-    lib, user: { email: 'teams-bot', role: 'system', tenant: '', tenantEnforced: false },
+    lib, user: { email: 'teams-bot', role: 'system', tenant: TENANT, tenantEnforced: false },
     body: { kind: 'install', activityId, tenantId: TENANT, aadObjectId: OID, serviceUrl: 'https://smba.trafficmanager.net/emea/', conversationId: 'a:conv', teamsUserId: '29:ada', email: '' },
   });
 }

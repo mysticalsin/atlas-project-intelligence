@@ -110,12 +110,12 @@ test('staffing and teams rows are erased for this tenant without an outreach tab
   const lib = fresh();
   assert.equal(sqlOf(lib).exec("SELECT name FROM sqlite_master WHERE name = 'outreach'").toArray().length, 0);
   sqlOf(lib).exec('CREATE TABLE staffing (project_id TEXT, consultant_email TEXT, tenant TEXT)');
-  sqlOf(lib).exec('CREATE TABLE teams_conversations (subject TEXT PRIMARY KEY, email TEXT, tenant_id TEXT)');
+  sqlOf(lib).exec('CREATE TABLE teams_conversations (subject TEXT PRIMARY KEY, email TEXT, tenant_id TEXT, atlas_tenant TEXT)');
   sqlOf(lib).exec('INSERT INTO staffing (project_id, consultant_email, tenant) VALUES (?, ?, ?), (?, ?, ?)', 'p', EMAIL, A, 'p', EMAIL, B);
-  sqlOf(lib).exec('INSERT INTO teams_conversations (subject, email, tenant_id) VALUES (?, ?, ?), (?, ?, ?)', 'sa', EMAIL, A, 'sb', EMAIL, B);
+  sqlOf(lib).exec('INSERT INTO teams_conversations (subject, email, tenant_id, atlas_tenant) VALUES (?, ?, ?, ?), (?, ?, ?, ?)', 'sa', EMAIL, A, null, 'sb', EMAIL, B, B);
   eraseMine(lib, ada(A), 'ab'.repeat(16));
   assert.deepEqual(sqlOf(lib).exec('SELECT tenant FROM staffing ORDER BY tenant').toArray().map(r => r.tenant), [B]);
-  assert.deepEqual(sqlOf(lib).exec('SELECT tenant_id FROM teams_conversations ORDER BY tenant_id').toArray().map(r => r.tenant_id), [B]);
+  assert.deepEqual(sqlOf(lib).exec('SELECT subject, atlas_tenant FROM teams_conversations ORDER BY subject').toArray(), [{ subject: 'sb', atlas_tenant: B }]);
 });
 
 test('erasure does not run SQL for evidence, approvals or jobs, which this slice does not create', () => {

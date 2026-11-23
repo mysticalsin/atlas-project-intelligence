@@ -10,7 +10,9 @@ import { cleanReference } from './library.js';
 import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
 import { str, obj, fail } from './util.js';
+import * as util from './util.js';
 import { TENANT_ID } from './authz.js';
+import { atlasTenant, addTeamsAtlasTenant } from './outreach.js';
 import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor, eraseSubjectInvitations } from './operate.js';
 import { placeholders } from './sql-bound.js';
 
@@ -42,7 +44,8 @@ function whereSubject(tenantColumn, subjectSql) {
   if (!IDENT.test(tenantColumn)) throw new Error('Bad column.');
   return `lower(COALESCE(${tenantColumn}, '')) = ? AND (${subjectSql})`;
 }
-// Tables this slice creates and can bind to the verified tenant. teams_conversations.tenant_id is the only tenant column that table has.
+// Tables this slice creates and can bind to the verified tenant. teams_conversations.tenant_id is the Teams directory.
+// The ATLAS stamp is atlas_tenant. Erasure does not treat the directory id as this tenant.
 // Journey and telemetry use the same functions as privacy delete.
 // Trust and directory are called with mode "subject": a manager-only trust address is replaced, and another person's directory manager address is replaced. Privacy delete calls them with mode "tenant" and keeps main's deletes.
 // A staffing row where this person is only the manager is pseudonymised, not deleted.
@@ -95,6 +98,53 @@ function replaceAddress(text, email, token) {
 }
 function subjectAddresses(user) {
   return [...new Set([user?.email, user?.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+}
+function sameAddress(value, addresses) {
+  return addresses.includes(String(value || '').trim().toLowerCase());
+}
+function replaceAddresses(text, addresses, token) {
+  let next = String(text ?? '');
+  for (const address of addresses) next = replaceAddress(next, address, token);
+  return next;
+}
+function scrubNode(value, addresses, token) {
+  if (typeof value === 'string') return replaceAddresses(value, addresses, token);
+  if (Array.isArray(value)) return value.map(item => scrubNode(item, addresses, token));
+  if (!value || typeof value !== 'object') return value;
+  const copy = { ...value };
+  if (Array.isArray(copy.sharedWith)) copy.sharedWith = copy.sharedWith.filter(item => !sameAddress(item, addresses));
+  if (Array.isArray(copy.details?.consultants)) {
+    copy.details = {
+      ...copy.details,
+      consultants: copy.details.consultants.map(person => sameAddress(person?.email, addresses) ? { name: '[erased]', email: '', role: '' } : person),
+    };
+  }
+  if (copy.validation && typeof copy.validation === 'object') {
+    const validation = { ...copy.validation };
+    if (sameAddress(validation.manager?.email, addresses)) validation.manager = { name: '[erased]', email: '' };
+    if (sameAddress(validation.by, addresses)) validation.by = token;
+    copy.validation = validation;
+  }
+  const walked = {};
+  for (const [key, item] of Object.entries(copy)) walked[key] = scrubNode(item, addresses, token);
+  return walked;
+}
+function scrubStored(raw, addresses, token) {
+  const src = raw == null ? '' : String(raw);
+  if (!src) return src;
+  let parsed;
+  try { parsed = JSON.parse(src); }
+  catch { return replaceAddresses(src, addresses, token); }
+  if (typeof parsed === 'string') return JSON.stringify(replaceAddresses(parsed, addresses, token));
+  if (Array.isArray(parsed) || (parsed && typeof parsed === 'object')) return JSON.stringify(scrubNode(parsed, addresses, token));
+  return replaceAddresses(src, addresses, token);
+}
+function textMentions(raw, addresses) {
+  const src = raw == null ? '' : String(raw);
+  return addresses.some(address => mentions(src, address));
+}
+function commaToken(list, addresses) {
+  return String(list || '').split(',').some(part => addresses.includes(part.trim().toLowerCase()));
 }
 function scrubManagerEmails(lib, tenant, addresses, token) {
   if (!hasTenantColumn(lib, 'profiles') || !addresses.length) return 0;
@@ -225,6 +275,11 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   const email = user.email, token = randomToken(), counts = {}, pending = [], touched = [];
   const addresses = subjectAddresses(user);
   const bump = (k, n = 1) => { if (n) counts[k] = (counts[k] || 0) + n; };
+  if (!addresses.length) {
+    return { erased: true, at: now, counts, pendingReview: [], auditHead: null, auditPreviousHead: null,
+      note: 'Rows in other tenants were not changed. This is not a certification of GDPR compliance.',
+      outside: 'Platform backups (Durable Object recovery) can keep a copy for a short period; the privacy notice states it as to-verify.' };
+  }
   const has = n => tableExists(lib, n);
   const hold = (kind, entity, reason) => {
     lib.exec('INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', lib.newId(), kind, entity, subjectHash(subj), reason, now, 'pending_dpo', tenant);
@@ -244,20 +299,22 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   }
   // 2. what is about the person on OTHER people's references: listed as a consultant, named as the N+1, recorded as the validator, last editor, or an author of a revision. Names and
   // emails become "[erased]" / the erasure token in the live data and in every revision. content_hash is left alone: it still names the revision that was rated and approved (X1, red L5).
-  for (const r of lib.rows('SELECT id, data, state, members, manager_email, updated_by FROM refs WHERE owner != ? AND ' + TENANT_SQL + ' AND (instr(members, ?) > 0 OR manager_email = ? OR updated_by = ? OR instr(data, ?) > 0 OR instr(state, ?) > 0)',
-    email, tenant, ',' + email + ',', email, email, '"' + email + '"', '"' + email + '"')) {
-    const listed = String(r.members).includes(',' + email + ',');
-    const scrub = d => {
-      const x = parse(d, null); if (!x) return d;
-      if (x.details?.consultants) x.details.consultants = x.details.consultants.map(c => (String(c.email || '').toLowerCase() === email ? { name: '[erased]', email: '', role: '' } : c));
-      if (String(x.validation?.manager?.email || '').toLowerCase() === email) x.validation.manager = { name: '[erased]', email: '' };
-      return JSON.stringify(x);
-    };
-    const st = parse(r.state, {}); if (st.validation?.by === email) st.validation.by = token;
-    const rest = String(r.members).split(',').filter(m => m && m !== email).join(',');
-    lib.exec('UPDATE refs SET data = ?, state = ?, members = ?, manager_email = ?, updated_by = ? WHERE id = ?', scrub(r.data), JSON.stringify(st), rest ? ',' + rest + ',' : ',',
-      r.manager_email === email ? '' : r.manager_email, r.updated_by === email ? token : r.updated_by, r.id);
-    for (const v of lib.rows('SELECT revision, data FROM revisions WHERE id = ?', r.id)) lib.exec('UPDATE revisions SET data = ? WHERE id = ? AND revision = ?', scrub(v.data), r.id, v.revision);
+  for (const r of lib.rows('SELECT id, owner, data, state, members, manager_email, updated_by FROM refs WHERE ' + TENANT_SQL, tenant)) {
+    if (addresses.includes(String(r.owner || '').trim().toLowerCase())) continue;
+    const listed = commaToken(r.members, addresses);
+    const managerHit = sameAddress(r.manager_email, addresses);
+    const editorHit = sameAddress(r.updated_by, addresses);
+    const revisions = lib.rows('SELECT revision, data FROM revisions WHERE id = ?', r.id);
+    const inBody = textMentions(r.data, addresses) || textMentions(r.state, addresses) || revisions.some(v => textMentions(v.data, addresses));
+    if (!listed && !managerHit && !editorHit && !inBody) continue;
+    const rest = String(r.members || '').split(',').map(part => part.trim()).filter(part => part && !addresses.includes(part.toLowerCase()));
+    lib.exec('UPDATE refs SET data = ?, state = ?, members = ?, manager_email = ?, updated_by = ? WHERE id = ?',
+      scrubStored(r.data, addresses, token), scrubStored(r.state, addresses, token), rest.length ? ',' + rest.join(',') + ',' : ',',
+      managerHit ? '' : r.manager_email, editorHit ? token : r.updated_by, r.id);
+    for (const v of revisions) {
+      const next = scrubStored(v.data, addresses, token);
+      if (next !== String(v.data ?? '')) lib.exec('UPDATE revisions SET data = ? WHERE id = ? AND revision = ?', next, r.id, v.revision);
+    }
     touched.push(r.id);
     bump(listed ? 'listingsRemoved' : 'otherRecordsScrubbed');
   }
@@ -271,6 +328,20 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   bump('invitationSources', invitations.scrubbed);
   // Each statement rewrites one subject column, and the tenant test wraps that condition.
   for (const spec of SUBJECT_TABLES) {
+    if (spec.table === 'teams_conversations') {
+      addTeamsAtlasTenant(lib);
+      if (!ready(lib, 'teams_conversations', ['email', 'subject'])) continue;
+      for (const alias of addresses) {
+        const rows = lib.rows('SELECT subject, atlas_tenant FROM teams_conversations WHERE lower(email) = ?', alias);
+        const gone = rows.filter(row => {
+          const stamp = atlasTenant(row.atlas_tenant);
+          return stamp === null || stamp === tenant;
+        });
+        for (const row of gone) lib.exec('DELETE FROM teams_conversations WHERE subject = ?', row.subject);
+        if (gone.length) bump(spec.key, gone.length);
+      }
+      continue;
+    }
     if (typeof spec.erase === 'function') {
       const n = spec.erase(lib, user, { mode: 'subject', tenant, token, email });
       if (n) bump(spec.key, n);
@@ -283,6 +354,9 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
       const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE ${where}`, tenant, alias)[0].n;
       if (n) { lib.exec(`DELETE FROM ${spec.table} WHERE ${where}`, tenant, alias); bump(spec.key, n); }
     }
+  }
+  for (const alias of addresses) {
+    if (typeof util.eraseRateHits === 'function') util.eraseRateHits(lib, alias);
   }
   if (ready(lib, 'gap_requests', ['email', 'tenant'])) {
     const where = whereSubject('tenant', 'lower(email) = ?');

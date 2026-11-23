@@ -11,9 +11,11 @@ import * as claims from '../src/claims.js';
 import { memorySql } from './sqlite.js';
 
 const ORIGIN = 'https://atlas.example';
+const ATLAS = 'abcdefab-cdef-4abc-8def-0123456789ab';
 const who = (email, role = 'user') => ({ email, mail: email, role });
-const ALEX = who('alex@mantu.com'), REV = who('rev@mantu.com', 'reviewer'), ADMIN = who('boss@mantu.com', 'admin'), SYS = { email: 'pm-system', mail: '', role: 'system' };
-const BOT = { email: 'teams-bot', mail: '', role: 'system' };
+const tenantOf = user => ({ ...user, tenant: ATLAS });
+const ALEX = who('alex@mantu.com'), REV = tenantOf(who('rev@mantu.com', 'reviewer')), ADMIN = tenantOf(who('boss@mantu.com', 'admin')), SYS = tenantOf({ email: 'pm-system', mail: '', role: 'system' });
+const BOT = tenantOf({ email: 'teams-bot', mail: '', role: 'system' });
 const TID = '11111111-2222-3333-4444-555555555555', OID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', OTHER = 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff';
 const HEADER = 'project_id,consultant_email,manager_email,manager_name,project_title,end_date';
 
@@ -22,7 +24,7 @@ function setup({ teams = null } = {}) {
   let n = 0;
   const l = new Library(sql, { now: () => new Date(clock.t).toISOString(), newId: () => (++n).toString(16).padStart(32, '0'), services: { teams } });
   const call = async (u, method, path, body) => {
-    const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json' },
+    const r = await libraryRoutes(new Request(ORIGIN + '/api/library/' + path, { method, headers: { 'x-atlas-user': u.email, 'x-atlas-role': u.role, 'x-atlas-email': u.mail, 'Content-Type': 'application/json', ...(u.tenant ? { 'x-atlas-tenant': u.tenant } : {}) },
       body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined }), l, { env: { ORIGIN, ATLAS_TENANT_ISOLATION: 'local-synthetic' } });
     return { status: r.status, body: await r.json() };
   };
@@ -109,6 +111,7 @@ test('parseCsv: quotes, escaped quotes, commas and newlines inside quotes, CRLF,
 });
 
 test('staffing import: exact header, client columns never read or stored, bad rows with line numbers, caps, due invitations', async () => {
+  const REV = who('rev@mantu.com', 'reviewer'), ADMIN = who('boss@mantu.com', 'admin');
   const s = setup(); await others(s);
   const today = '2026-09-29';
   await s.l.upsert(ALEX, { localId: 'done', reference: { title: 'Already told', details: { projectId: 'PRJ-HAS' } } });
@@ -190,7 +193,7 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   const t = await s.call(ADMIN, 'POST', 'outreach/' + teams.id, { action: 'approve' });
   assert.deepEqual([t.body.item.status, t.body.item.reason], ['blocked_external', 'Teams is not connected: tenant app, bot credentials and TEAMS_* settings are missing.']);
   // Phone is never queued; a phone row (inserted by hand) is always blocked_external.
-  sqlOf(s.l).exec("INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at) VALUES ('ph1', 'interview_invite', ?, 'phone', 'alex@mantu.com', 'pending_approval', '', '{}', 'x')", inv.id);
+  sqlOf(s.l).exec("INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at, tenant) VALUES ('ph1', 'interview_invite', ?, 'phone', 'alex@mantu.com', 'pending_approval', '', '{}', 'x', ?)", inv.id, ATLAS);
   const ph = await s.call(REV, 'POST', 'outreach/ph1', { action: 'approve' });
   assert.equal(ph.body.item.status, 'blocked_external'); assert.match(ph.body.item.reason, /Twilio.*Teams Phone/);
   const d = await s.call(REV, 'POST', 'outreach/' + teams.id, { action: 'dismiss' });
@@ -200,7 +203,7 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   assert.equal((await s.call(REV, 'POST', 'outreach/ph1', { action: 'send' })).status, 400);
   // A closed subject is never sent: approving an item whose invitation was dismissed dismisses the item.
   const inv2 = (await trigger(s, { email: 'kim@mantu.com', projectId: 'PRJ-11' })).body;
-  await s.l.updateInvitation(who('kim@mantu.com'), inv2.id, { action: 'dismiss' });
+  await s.l.updateInvitation(tenantOf(who('kim@mantu.com')), inv2.id, { action: 'dismiss' });
   const late = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.subjectId === inv2.id && i.channel === 'email_draft');
   const closed = await s.call(REV, 'POST', 'outreach/' + late.id, { action: 'approve' });
   assert.deepEqual([closed.body.item.status, closed.body.item.reason, closed.body.draft], ['dismissed', 'The invitation or request is no longer open.', undefined]);
@@ -227,7 +230,7 @@ test('an approved email draft can be produced again (the page reloaded before se
     { actor: 'rev@mantu.com', action: 'outreach drafted', detail: 'interview_invite email_draft' },
     { actor: 'boss@mantu.com', action: 'outreach drafted', detail: 'interview_invite email_draft' }]);
   assert.equal((await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'dismiss' })).status, 409, 'a drafted row is not dismissed');
-  await s.l.updateInvitation(ALEX, inv.id, { action: 'dismiss' });
+  await s.l.updateInvitation(tenantOf(ALEX), inv.id, { action: 'dismiss' });
   const closed = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
   assert.deepEqual([closed.status, closed.body.error, closed.body.draft], [409, 'The invitation or request is no longer open.', undefined]);
   assert.equal(s.l.rows('SELECT status FROM outreach WHERE id = ?', email.id)[0].status, 'drafted');
