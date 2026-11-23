@@ -20,6 +20,7 @@ from aiohttp import web
 from .analyst import Analyst, chat_completer
 from .capacity import BUSY
 from .gaps import TIME_PLAN, gap_system_block
+from .identity import COOKIE
 from .interview import project_context
 from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
