@@ -98,37 +98,62 @@ function erase(lib) {
   }), lib, { env: ENV });
 }
 
+// A 12-hex erasure token can contain the letters ada. Forbidding that substring
+// fails when the generator draws those bytes, and it does not prove the source
+// stopped being the subject. This test pins the generator to that token.
+const TOKEN_HEX = 'adaadaadaada';
+const PINNED_TOKEN = 'erased:' + TOKEN_HEX;
+
+function pinErasureToken() {
+  const bytes = Uint8Array.from(TOKEN_HEX.match(/../g), pair => Number.parseInt(pair, 16));
+  const original = crypto.getRandomValues;
+  crypto.getRandomValues = (array) => {
+    for (let i = 0; i < array.length; i += 1) array[i] = bytes[i % bytes.length];
+    return array;
+  };
+  return () => {
+    crypto.getRandomValues = original;
+  };
+}
+
 test('a privacy erase removes or scrubs the subject\'s sent and received invitations and the receipt counts them', async () => {
-  const lib = open();
-  seed(lib, { id: 'recv-email', email: SUBJECT, project: 'PRJ-RECV', title: 'Received', source: OTHER, tenant: A });
-  seed(lib, { id: 'recv-mail', email: MAIL, project: 'PRJ-MAIL', title: 'Mail alias', source: OTHER, tenant: A });
-  seed(lib, { id: 'sent-email', email: OTHER, project: 'PRJ-SENT', title: 'Sent', source: SUBJECT, tenant: A });
-  seed(lib, { id: 'sent-mail', email: 'sam@example.test', project: 'PRJ-SENT-MAIL', title: 'Sent mail', source: MAIL, tenant: A });
+  const restore = pinErasureToken();
+  try {
+    const lib = open();
+    seed(lib, { id: 'recv-email', email: SUBJECT, project: 'PRJ-RECV', title: 'Received', source: OTHER, tenant: A });
+    seed(lib, { id: 'recv-mail', email: MAIL, project: 'PRJ-MAIL', title: 'Mail alias', source: OTHER, tenant: A });
+    seed(lib, { id: 'sent-email', email: OTHER, project: 'PRJ-SENT', title: 'Sent', source: SUBJECT, tenant: A });
+    seed(lib, { id: 'sent-mail', email: 'sam@example.test', project: 'PRJ-SENT-MAIL', title: 'Sent mail', source: MAIL, tenant: A });
 
-  const response = await erase(lib);
-  const body = await response.json();
-  assert.equal(response.status, 200);
-  assert.equal(lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE id IN ('recv-email', 'recv-mail')")[0].n, 0);
-  const sent = lib.rows("SELECT id, email, source, status, tenant FROM invitations WHERE id IN ('sent-email', 'sent-mail') ORDER BY id");
-  assert.equal(sent.length, 2);
-  for (const row of sent) {
-    assert.equal(row.status, 'open');
-    assert.equal(row.tenant, A);
-    assert.match(row.source, /^erased:[0-9a-f]{12}$/);
-    assert.equal(row.source.toLowerCase().includes('ada'), false);
+    const response = await erase(lib);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(lib.rows("SELECT COUNT(*) AS n FROM invitations WHERE id IN ('recv-email', 'recv-mail')")[0].n, 0);
+    const sent = lib.rows("SELECT id, email, source, status, tenant FROM invitations WHERE id IN ('sent-email', 'sent-mail') ORDER BY id");
+    assert.equal(sent.length, 2);
+    for (const row of sent) {
+      assert.equal(row.status, 'open');
+      assert.equal(row.tenant, A);
+      assert.equal(row.source, PINNED_TOKEN);
+      assert.equal(row.source.includes('ada'), true);
+      assert.notEqual(row.source.toLowerCase(), SUBJECT.toLowerCase());
+      assert.notEqual(row.source.toLowerCase(), MAIL.toLowerCase());
+    }
+    assert.equal(sent.find(row => row.id === 'sent-email').email, OTHER);
+    assert.equal(sent.find(row => row.id === 'sent-mail').email, 'sam@example.test');
+
+    const counted = body.outcomes.find(item => item.store === 'invitations');
+    assert.ok(counted, 'receipt counts invitations');
+    assert.equal(counted.removed, 2);
+    assert.equal(counted.scrubbed, 2);
+    assert.equal(counted.error, null);
+    assert.equal(body.note.includes('invitations'), false);
+    const audit = lib.rows("SELECT detail FROM audit WHERE action = 'privacy delete'");
+    assert.equal(audit.length, 1);
+    assert.match(audit[0].detail, /invitations 2 scrubbed 2/);
+  } finally {
+    restore();
   }
-  assert.equal(sent.find(row => row.id === 'sent-email').email, OTHER);
-  assert.equal(sent.find(row => row.id === 'sent-mail').email, 'sam@example.test');
-
-  const counted = body.outcomes.find(item => item.store === 'invitations');
-  assert.ok(counted, 'receipt counts invitations');
-  assert.equal(counted.removed, 2);
-  assert.equal(counted.scrubbed, 2);
-  assert.equal(counted.error, null);
-  assert.equal(body.note.includes('invitations'), false);
-  const audit = lib.rows("SELECT detail FROM audit WHERE action = 'privacy delete'");
-  assert.equal(audit.length, 1);
-  assert.match(audit[0].detail, /invitations 2 scrubbed 2/);
 });
 
 test('a privacy erase leaves other subjects\' invitations untouched', async () => {

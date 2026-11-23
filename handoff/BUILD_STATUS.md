@@ -1,6 +1,19 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 sweep 01 plan manifest and erase-token assertion (`cursor/atlas-s01-high-plans`)
+
+PR 38. The ten files under `docs/sweeps/s01/plans/` were unlisted in `MANIFEST.json`. `python3 scripts/check_handoff.py . --dev-git-index --no-rebuild` failed `manifest-content` on those ten paths and on `deploy/cloudflare-edge/test/invitation-tenant-erase.test.js`. Group 1 and group 10 plan text is not edited.
+
+The edge erase flake is the assertion that a scrubbed invitation source does not contain the letters ada. A pinned generator that returns the hex `adaadaadaada` failed that assertion (`true !== false` at the old line). The test now pins `crypto.getRandomValues` to that token, expects `erased:adaadaadaada`, and still requires the source to differ from the subject address and the mail alias. Receipt counts stay 2 removed and 2 scrubbed. Product erase code is not edited.
+
+Measured before the manifest refresh:
+
+- `node --test test/invitation-tenant-erase.test.js`: 28 tests, 28 pass, exit 0.
+- `node --test test/*.test.js` in `deploy/cloudflare-edge`: 1117 tests, 1113 pass, 0 fail, 4 skipped, exit 0.
+
+`MANIFEST.json` is regenerated after this note with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
