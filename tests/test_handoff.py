@@ -1313,3 +1313,20 @@ def test_repeated_trailing_dot_and_space_is_refused(tmp_path, name):
     detail = _manifest_detail(result)
     assert 'refused: ' + rel in detail, detail
     assert result['passed'] is False
+
+
+def test_dev_trailing_slash_exclude_is_exact_or_prefix():
+    """A dev exclude ending in / is that directory or a child, not a substring.
+
+    `b/` allows `b` and `b/c`. It does not allow `ab/c` or a later segment `a/b/c`.
+    Package mode ignores a trailing-slash exclude.
+    """
+    from scripts.check_handoff import manifest_allows_path
+    excludes = ['b/']
+    assert manifest_allows_path('a/b/c', excludes, package_mode=False) is False
+    assert manifest_allows_path('ab/c', excludes, package_mode=False) is False
+    assert manifest_allows_path('foo/b/bar', excludes, package_mode=False) is False
+    assert manifest_allows_path('bc', excludes, package_mode=False) is False
+    assert manifest_allows_path('b', excludes, package_mode=False) is True
+    assert manifest_allows_path('b/c', excludes, package_mode=False) is True
+    assert manifest_allows_path('b/c', excludes, package_mode=True) is False
