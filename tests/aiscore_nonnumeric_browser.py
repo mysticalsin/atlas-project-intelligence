@@ -54,14 +54,17 @@ try:
         email, roles = 'reviewer@example.test', ['ATLAS.Reviewer']
         page.goto(BASE + '/?as=' + urllib.parse.quote(email) + '&idp=' + urllib.parse.quote(json.dumps({'roles': roles})))
         page.wait_for_timeout(400)
-        def line_for(ai):
+        def line_for(ai, first=False):
             held['ai'] = ai
-            page.goto(BASE + '/#library/' + rid)
+            if first:
+                page.goto(BASE + '/#library/' + rid)
+            else:
+                page.reload()
             page.wait_for_timeout(1200)
             opened = page.evaluate("() => !!document.getElementById('recordDialog')?.open")
             text = page.locator('#recordBody .quality .impact-head').inner_text()
             return opened, text
-        opened, text = line_for('not-a-score')
+        opened, text = line_for('not-a-score', True)
         check('string aiScore is not printed', opened and 'Quality 80 / 100' in text and 'completeness 40' in text and 'not-a-score' not in text)
         opened, text = line_for({'ignored': True})
         check('object aiScore is not printed', opened and 'Quality 80 / 100' in text and '[object Object]' not in text)
