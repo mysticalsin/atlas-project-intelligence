@@ -1082,8 +1082,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/memory.js",
-      "bytes": 10424,
-      "sha256": "738f9f2d8accb7bdf431fb962d407c8e4e9d7b2e90db8f144c940c1631f2d5a1"
+      "bytes": 10527,
+      "sha256": "39103b20444be5229444f5415ddd66f9d2ac6081d6ecf57d2ecb4f5c13ed32a4"
+    },
+    {
+      "path": "deploy/cloudflare-edge/src/name-match.js",
+      "bytes": 11404,
+      "sha256": "a4dc48e83c0cc42c4e9f3e9546d8c0861b135a5fd744db199d82bd2a29e61867"
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
@@ -1157,13 +1162,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/review.js",
-      "bytes": 9811,
-      "sha256": "b3f7c46c4838e7970836aebbf8528c4fa3ea592cddc40b2b17a34e3827e392e6"
+      "bytes": 9288,
+      "sha256": "3cdfbfd79dfd2c1973f1ce23c837c95f862a6cefdf4abdd2dd7f2a231be59f65"
     },
     {
       "path": "deploy/cloudflare-edge/src/scrub.js",
-      "bytes": 21966,
-      "sha256": "260baa52a125ae45abf5d500d66b05001f7155ccea98326fb8b0aca00e3b3bf9"
+      "bytes": 12589,
+      "sha256": "b54e0cb6eabe7c9b6df8f69229eba110cecda069e9732c23a2970aa0606d5b62"
     },
     {
       "path": "deploy/cloudflare-edge/src/security-headers.js",
@@ -1182,8 +1187,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sheet.js",
-      "bytes": 10158,
-      "sha256": "ff8cde8f67a43662b27fa12e3273059f7b22f07748d27e6cce24bb524afdde41"
+      "bytes": 10131,
+      "sha256": "5dbd5fd523db4696c7c885eb4b077fc6de0887bc6ab3d244a7c1b18cadf8cf23"
     },
     {
       "path": "deploy/cloudflare-edge/src/snippets.js",
@@ -1467,13 +1472,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
-      "bytes": 16267,
-      "sha256": "3bf23c726cff9917a9dd73af40936bd2e58a7d61096d4cd6d708cef6f686127a"
+      "bytes": 16352,
+      "sha256": "f053b1630d8928cb7b2a6243591976d57e8029b175c0be884af8f226b3a3ceda"
     },
     {
       "path": "deploy/cloudflare-edge/test/memory.test.js",
-      "bytes": 13401,
-      "sha256": "2a87551ca65ce218ff91f56658a334a0cbf6e3a624ec5a6f692fadd640e2cdc1"
+      "bytes": 13611,
+      "sha256": "abe66ca3d61b7e25da801be8a92082e0fd60a953e0711870895e377190aca5ed"
     },
     {
       "path": "deploy/cloudflare-edge/test/outreach.test.js",
@@ -1667,8 +1672,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/scrub.test.js",
-      "bytes": 19467,
-      "sha256": "f969f6cc778109aac4a92618cdd0faf0425b1310cdb13585a6794b46b8aac63f"
+      "bytes": 19460,
+      "sha256": "573959a4197096a36aaa0b2460489ab03878f2a7af071b23038d63c34e9a8c14"
     },
     {
       "path": "deploy/cloudflare-edge/test/security-harness.js",
@@ -1719,6 +1724,16 @@
       "path": "deploy/cloudflare-edge/test/sqlite.js",
       "bytes": 3391,
       "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-a-logic.test.js",
+      "bytes": 2592,
+      "sha256": "2990b2c96d1c6fd714c57ef83c670327bba22e1e1ab74bc16680eb3564a5fe29"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-g1-scrub-props.test.js",
+      "bytes": 6905,
+      "sha256": "c6f521c07b5e68a7fff4d3340dbeaa8fac31636a5beae8a254b40c86e6a28f06"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
@@ -2172,8 +2187,8 @@
     },
     {
       "path": "docs/WOW_SPEC.md",
-      "bytes": 167190,
-      "sha256": "901a8a3c6e199cf7ff73e15ee89756fdddab38526fd7f4364e5c1025f95151af"
+      "bytes": 167094,
+      "sha256": "0fe0ec9c011e58a43fe66a34edc821a03c9d3b4515dc54c04e539205c18a1d04"
     },
     {
       "path": "docs/WOW_ZERO_CONFIG.md",
