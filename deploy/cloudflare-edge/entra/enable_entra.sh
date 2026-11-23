@@ -2,7 +2,7 @@
 # Adds Microsoft Entra ID to Cloudflare Access and switches the ATLAS app to it. BUILT, NOT RUN.
 # Requires explicit approval flag and IT-provided values; see entra/README.md.
 # The trap removes only the local temp directory on EXIT, INT, TERM, and HUP. It does not delete a remote identity provider; restoring the previous Access login is an IT action in the Cloudflare dashboard.
-# A dollar sign or other shell metacharacter in the API token or the client secret is refused before any file is written. Tilde, plus, slash, and equals stay allowed: Microsoft secrets use them, and this script never expands the value in the shell.
+# A dollar sign or other shell metacharacter in the API token or the client secret is refused before any file is written. Hash, backtick, and exclamation are refused by their own code-point checks. Tilde, plus, slash, and equals stay allowed: Microsoft secrets use them, and this script never expands the value in the shell.
 set -euo pipefail
 [ "${1:-}" = "--i-have-it-approval" ] || { echo "Refusing: pass --i-have-it-approval once Mantu IT has approved (see entra/README.md)." >&2; exit 2; }
 xtrace=0
@@ -33,7 +33,13 @@ def accepted(value):
     if not isinstance(value, str) or not value:
         return False
     for ch in value:
-        if ch in "\n\r\t\"'\\` !*?;&|()<>[]{}" or ch == "$" or ord(ch) in (35,) or ord(ch) < 33 or ord(ch) > 126:
+        if ord(ch) == 35:
+            return False
+        if ord(ch) == 96:
+            return False
+        if ord(ch) == 33:
+            return False
+        if ch in "\n\r\t\"'\\ *?;&|()<>[]{}" or ch == "$" or ord(ch) < 33 or ord(ch) > 126:
             return False
     return True
 
