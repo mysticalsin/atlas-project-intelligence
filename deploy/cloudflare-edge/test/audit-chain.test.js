@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
-import { sha256Hex, hmacHex, rowHash, appendAudit, verifyChain, ensureChain, GENESIS } from '../src/audit-chain.js';
+import { sha256Hex, hmacHex, rowHash, appendAudit, verifyChain, ensureChain, anchoredVerdict, GENESIS } from '../src/audit-chain.js';
 import { Library } from '../src/library.js';
 import { memorySql } from './sqlite.js';
 
@@ -70,6 +70,26 @@ test('a deleted oldest prefix is not a valid chain; deleting the newest rows is 
   const after = verifyChain(sql);
   assert.equal(after.ok, true);
   assert.notEqual(after.head, head5, 'the logged head no longer matches the anchor');
+});
+
+test('appendAudit writes the anchor, so a tail delete is TRUNCATED and the stored anchor stays', () => {
+  const sql = memorySql(); table(sql);
+  appendAudit(sql, row(1));
+  appendAudit(sql, row(2));
+  const verified = verifyChain(sql);
+  const anchor = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray();
+  assert.equal(anchor.length, 1);
+  assert.equal(Number(anchor[0].n), verified.checked);
+  assert.equal(anchor[0].head, verified.head);
+  const storedN = Number(anchor[0].n);
+  const storedHead = anchor[0].head;
+  sql.exec('DELETE FROM audit WHERE seq = (SELECT MAX(seq) FROM audit)');
+  const verdict = anchoredVerdict(sql, verifyChain(sql));
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, 'TRUNCATED');
+  const after = sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray()[0];
+  assert.equal(Number(after.n), storedN);
+  assert.equal(after.head, storedHead);
 });
 
 test('rows with no hashes migrate to one chain-start and the old rows stay unsigned', () => {
