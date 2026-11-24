@@ -123,6 +123,20 @@ try:
         page.wait_for_timeout(800)
         check('an unread need link asks for a paste', "Couldn't read that link" in page.locator('#livingStatus').inner_text())
         shot(page, 'living-error.png')
+        reuse = {'mode': 'dismiss', 'seen': []}
+        def on_reuse(dialog):
+            reuse['seen'].append(dialog.message)
+            if reuse['mode'] == 'accept' and dialog.message == 'Reuse your published profile for this CV and review?':
+                dialog.accept()
+            else:
+                dialog.dismiss()
+        page.on('dialog', on_reuse)
+        page.locator('#livingNeed').fill('Skill (Must)\nWindows')
+        page.get_by_role('button', name='Generate CV').click()
+        page.wait_for_function("() => (document.getElementById('livingStatus').textContent || '').includes('Profile reuse was not granted.')", timeout=5000)
+        check('a declined prompt does not grant profile reuse', reuse['seen'] == ['Reuse your published profile for this CV and review?'] and page.locator('#living .cv-doc').count() == 0)
+        reuse['mode'] = 'accept'
+        reuse['seen'].clear()
         held = []
         def hold(route):
             held.append(route)
@@ -223,6 +237,7 @@ try:
         check('second manager approved', edge_api('sam@example.test', 'POST', f"/api/library/{made2[1]['id']}/validate", {'decision': 'validate', 'lane': 'manager'})[0] == 200)
         check('second story published', edge_api('pre@example.test', 'POST', f"/api/library/{made2[1]['id']}/validate", {'decision': 'validate', 'lane': 'presales'}, ['ATLAS.Presales'])[1].get('status') == 'published')
         quiet = browser.new_context(viewport={'width': 1400, 'height': 900}).new_page()
+        quiet.on('dialog', on_reuse)
         quiet.goto(BASE + '/?as=' + urllib.parse.quote('bea@example.test'))
         quiet.wait_for_timeout(700)
         quiet.locator('header [data-view=living]').click()

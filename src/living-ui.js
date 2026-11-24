@@ -8,6 +8,7 @@ async function post(path,body){
   try{return await api(path,{method:'POST',body});}
   catch(e){
     if(e.message!=='Consent required.')throw e;
+    if(!window.confirm('Reuse your published profile for this CV and review?'))throw Error('Profile reuse was not granted.');
     await api('/profile/consent',{method:'POST',body:{kind:'profileReuse',version:1,granted:true}});
     return await api(path,{method:'POST',body});
   }

@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 941627,
+      "sha256": "8b5ed3a140aa24fe04b5c96735bebfb93190b2eebbba9dc0120835b86b7d885a"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 941627,
+      "sha256": "8b5ed3a140aa24fe04b5c96735bebfb93190b2eebbba9dc0120835b86b7d885a"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 941627,
+      "sha256": "8b5ed3a140aa24fe04b5c96735bebfb93190b2eebbba9dc0120835b86b7d885a"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 941501,
-      "sha256": "05fb5f9ed8e99901cf59a4ad0e41d0cd9881b6b53f9c63a474267f7bb1f89e14"
+      "bytes": 941627,
+      "sha256": "8b5ed3a140aa24fe04b5c96735bebfb93190b2eebbba9dc0120835b86b7d885a"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "d7de950b5d698d1cdb869ad6cc0e2867c1fe7586ebb894f02037a5a1ef2f54eb"
+      "sha256": "027a2ac88c6e721ad22f5f807d00b6739c54bed333f4dc406bc03d07722592f6"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "1ad3a75323055dc8a4b3ddacd626d5784bb56ff9bad8b173eecfc5914f583b73"
+      "sha256": "7440b820992a39c7c17e1f5d17e454818537c65d4cac48612670ce3d95c78f96"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2892,8 +2892,8 @@
     },
     {
       "path": "src/living-ui.js",
-      "bytes": 12594,
-      "sha256": "3c511c2a1b4439a839514499d2b57ceeacccfc33a8b268e85e9ab40431336059"
+      "bytes": 12720,
+      "sha256": "da9ae10a6ce79d8d3ab0f007b6a65dee2ed7d7438c839ceab9ed6028117c12c7"
     },
     {
       "path": "src/living.css",
@@ -3211,6 +3211,11 @@
       "sha256": "c6bebc0cf77b0fa036e0fadcd5404d478582aff732fed017be3f2e638756a731"
     },
     {
+      "path": "tests/living-consent.test.js",
+      "bytes": 722,
+      "sha256": "118d9f6a5bd36267658cfcd84143d4cfa9db0e123f8eb0338c66b0bda9531e46"
+    },
+    {
       "path": "tests/living-core.test.js",
       "bytes": 2043,
       "sha256": "0bc7eab95487d61df5dd95fce0e34d0645f41db9351411b2460d98b9ec9adf79"
@@ -3222,8 +3227,8 @@
     },
     {
       "path": "tests/living_browser.py",
-      "bytes": 18268,
-      "sha256": "3c2bd75c8ef9e5eafecc4c7b05ab234b6a75525725984477a8485327f734e21d"
+      "bytes": 19207,
+      "sha256": "ae63c209a6ae0af56452d0ce291bb5aceca529dd21e8399d5ba0bcb4c3f759ce"
     },
     {
       "path": "tests/memory_browser.py",
