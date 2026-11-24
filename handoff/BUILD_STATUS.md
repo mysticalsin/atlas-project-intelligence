@@ -1639,3 +1639,16 @@ winloop.js:68 1
 - The pin test asserts the full sha256. A same-length byte flip and a one-nibble pin change must throw. The four tracked aliases use the same assert. `deploy/cloudflare-edge/src/atlas.html` is hashed only when it is tracked.
 - Mutants, restored and not committed, each exit 1: compare replaced with `true` (5 pass, 1 fail); `exit 0` after `cd` (4 pass, 2 fail); build path moved (`verify_page_build.sh` exit 23); length-only assert (4 pass, 2 fail, `Missing expected exception`); pin first digit `7` to `6` (verify exit 1, node 4 pass, 2 fail).
 - On `e12ff8d`, before this note's manifest write: test command exit 0, pin test 6 pass, 0 fail, 829 ms. pytest 331 passed, 2 failed, 127 warnings, 24.74s, exit 1. Both failures name `changed: scripts/verify_page_build.sh; changed: tests/page-pin.test.js`. Node 419 pass, 0 fail, 0 skipped, 22124 ms, exit 0. Edge 1117 pass, 0 fail, 0 skipped, 237566 ms, exit 0. `make test-ui` 834 PASS, 0 FAIL, 26 scripts, 437s, exit 0. `check_handoff` exit 1 on that manifest-content detail. `MANIFEST.json` is regenerated after this note. Gate logs for the head are in the agent store `gates-<head>` under `atlas-pr13-pin`. Not a production-ready claim. Live voice, identity, and multi-user checks in `handoff/ACCEPTANCE.md` remain open.
+
+### Session: 2026-11-23 / ATLAS-UI-TAP-TARGETS
+
+- Branch `cursor/ui-tap-targets-7da8` from main `8b0972ecf68228ab4a3bab5e4e90ffd5948826ec`. Synthetic local page only. No deploy and no provider call.
+- Red `9cc45d23ed2acd4155fb8943ea3b9ef235352488` is `tests/tap_targets_browser.py`. At 390 px, `python3 tests/tap_targets_browser.py` exits 1. Three summaries are under 24 px: Orb motion details 17 px, Proposed Git workflow & repository 19 px, Live candidate ledger 19 px. The same run lists 74 visible buttons under 44 px. The skip link and step pips are excluded.
+- The fix sets `min-height: 44px` on `button`, `summary`, and `a.btn` in `src/journey.css`, and makes `.stage-tool`, `.close`, and `.avatar` 44 px squares. Step pips stay 5 px. Colors, logo, and the orb wave are unchanged.
+- After `python3 build.py` the four HTML aliases and `PAGE_SHA256.txt` are `b139710fdf8292bc93d459b6cbfc425f70dc8cb26555898bdc0a9a0804e24133`, 924395 bytes. `csp.generated.js` is unchanged. The tap test exits 0. `node --test tests/page-pin.test.js` is 6 pass. Document and top bar stay 390/390 and 600/600. Not a production-ready claim.
+
+### Session: 2026-11-23 / ATLAS-UI-TAP-TARGETS fit
+
+- The 44 px rule left `#voiceOpenHome` below a 1366 × 768 screen. On a short desktop (`min-width: 1041px` and `max-height: 830px`) `.orb-panel .voice-controls` uses a 12 px top margin. Tap targets stay 44 px. Step pips and the skip link stay as they are. Mobile rules are unchanged.
+- After `python3 build.py` (`ATLAS_HOME_URL` unset) the four HTML aliases and `PAGE_SHA256.txt` are `b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794`, 924572 bytes. Logo SHA-256 stays `92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b`. `csp.generated.js` is unchanged.
+- `MANIFEST.json` is regenerated after this note with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`, and lists `tests/tap_targets_browser.py`. Not a production-ready claim.

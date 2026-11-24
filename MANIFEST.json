@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924572,
+      "sha256": "b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924572,
+      "sha256": "b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924572,
+      "sha256": "b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924572,
+      "sha256": "b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "0b7f7a63ef8cf248427e34237e3d84cdd5ec86070d66e99cd99761b7b5547148"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348891,
+      "sha256": "a1b0707174e5b0b018ba78b22e63bf4542667572e624c54fd84b9fcd36ed141a"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2857,8 +2857,8 @@
     },
     {
       "path": "src/journey.css",
-      "bytes": 2301,
-      "sha256": "7ea96610b610174d0884945bede2141dd01ef3ac91c3c6b9f052e8f04648a52b"
+      "bytes": 2858,
+      "sha256": "bd830e26c3d994908361c29611aecc926318aacf509820d89e37b4996e00e351"
     },
     {
       "path": "src/office.js",
@@ -3339,6 +3339,11 @@
       "path": "tests/swarm.test.js",
       "bytes": 4453,
       "sha256": "a24021f99bb237a712504f42edb4add1155258f476e83c678fc4d9065234cedc"
+    },
+    {
+      "path": "tests/tap_targets_browser.py",
+      "bytes": 3988,
+      "sha256": "6d730adb661f85ad62083396aeb3861b18dc1daa9d874a5325de200d9412b263"
     },
     {
       "path": "tests/test_analyst.py",
