@@ -1,5 +1,5 @@
 # Configuration and commands
-This is the map to **existing code**, not a claim that services are available. All commands run from the extracted `ATLAS_Project_Intelligence/` root. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified.
+This is the map to **existing code**, not a claim that services are available. All commands run from the extracted `ATLAS_Project_Intelligence/` root. `ATLAS_CSRF_BIND` is the CSRF cookie binding named in `handoff/SECURITY_RUNBOOK.md`. Leave it unset unless an operator selects `sub`. The intended application server is an approved Linux/Unix environment with Python 3.11+; the Mac can remain only a browser client. Local development can use macOS. Windows users need an appropriate shell for the included `.sh` scripts; native Windows server operation is not verified.
 
 ## Dependencies by task
 | Task | Required |
@@ -21,28 +21,28 @@ This is the map to **existing code**, not a claim that services are available. A
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python scripts/doctor.py --profile preview
-python build.py
+python3 -m pip install -r requirements-test.txt
+python3 -m playwright install chromium
+python3 scripts/doctor.py --profile preview
+python3 build.py
 node --test tests/*.test.js
-python -m pytest tests/test_*.py -q
-python tests/studio_browser.py
-python tests/sculpture_browser.py
-python tests/intelligence_browser.py
-python tests/depth_browser.py
+python3 -m pytest tests/test_*.py -q
+python3 tests/studio_browser.py
+python3 tests/sculpture_browser.py
+python3 tests/intelligence_browser.py
+python3 tests/depth_browser.py
 ```
 Install FFmpeg with libopus using the approved OS package manager before Python codec tests. `CHROMIUM_PATH` may point to a known installed Chromium executable. Browser installation can require OS libraries; use the approved host procedure, not blind privileged commands. No tests above need a real provider key.
 
 ## One real hosted conversation
 ```sh
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 cp .env.example .env   # only when .env does not already exist; never overwrite a working configuration
 # Edit the operator-owned .env securely. Set OPENAI_API_KEY; keep the exact origin.
-python scripts/doctor.py --profile hosted --env-file .env
+python3 scripts/doctor.py --profile hosted --env-file .env
 bash scripts/start_gateway.sh
 ```
-Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and deliberately cannot activate voice. The launcher reads `.env`; running `python -m atlas_voice.server` directly does **not** load that file. The launcher sources it as shell code—inspect it and restrict its ownership/permissions. The offline doctor reads simple assignments without executing shell expressions.
+Open `http://localhost:8080` for the defaults. The safe preview is port 8000 and deliberately cannot activate voice. The launcher reads `.env`; running `python3 -m atlas_voice.server` directly does **not** load that file. The launcher sources it as shell code—inspect it and restrict its ownership/permissions. The offline doctor reads simple assignments without executing shell expressions.
 
 ### Core / selected voice
 | Variable | Existing default / example | Meaning |
@@ -78,7 +78,7 @@ Install `requirements-entra.txt` and `requirements-hindsight.txt` as needed.
 
 Register exactly `<ATLAS_ORIGIN>/auth/callback`. Configure independent `ATLAS.Review` and `ATLAS.Publish` assignments according to real authority. All app users also need the base interview role. Same-origin CSRF and secure session cookies are application requirements, not optional demo obstacles.
 
-Run `python scripts/doctor.py --profile shared --env-file .env` after configuration. It checks local prerequisites only. Test at least two distinct Entra identities and a non-author reviewer. Local workspace switching is **not** that test. `scripts/wiki_access.py --help` explains operator story grants; stop the pilot gateway before operator maintenance that requires a consistent single-process vault.
+Run `python3 scripts/doctor.py --profile shared --env-file .env` after configuration. It checks local prerequisites only. Test at least two distinct Entra identities and a non-author reviewer. Local workspace switching is **not** that test. `scripts/wiki_access.py --help` explains operator story grants; stop the pilot gateway before operator maintenance that requires a consistent single-process vault.
 
 Requested Hindsight source: https://github.com/mysticalsin/hindsight at `a921929a0e0ea82fb49da1daa0ca3e152e41fcc1`. Use `docs/SOURCE_LOCK.json` and the pinned repository's own deployment instructions. The server source/weights are not vendored in this small application ZIP.
 
@@ -95,7 +95,7 @@ Requested Hindsight source: https://github.com/mysticalsin/hindsight at `a921929
 | `ANALYST_API_KEY` | Server-side key; never sent to the browser. |
 
 ### Hosting on Cloudflare (Tunnel + Access)
-Selected hosting shape (2026-09-26): the unchanged gateway on one always-on host, published through a Cloudflare named tunnel with Cloudflare Access as an outer gate. Runbook and templates: `deploy/cloudflare/README.md`, `config.yml.example`, `atlas.env.example`, `atlas-gateway.service.example`. Requires `ATLAS_AUTH=entra`, loopback bind and `ATLAS_ORIGIN` equal to the public `https://` hostname pinned by `httpHostHeader`. Local mode is rejected off loopback by design. Check with `python scripts/doctor.py --profile cloudflare --env-file .env` (offline only).
+Selected hosting shape (2026-09-26): the unchanged gateway on one always-on host, published through a Cloudflare named tunnel with Cloudflare Access as an outer gate. Runbook and templates: `deploy/cloudflare/README.md`, `config.yml.example`, `atlas.env.example`, `atlas-gateway.service.example`. Requires `ATLAS_AUTH=entra`, loopback bind and `ATLAS_ORIGIN` equal to the public `https://` hostname pinned by `httpHostHeader`. Local mode is rejected off loopback by design. Check with `python3 scripts/doctor.py --profile cloudflare --env-file .env` (offline only).
 
 ### Cloudflare edge Worker (the live test deployment): zero-setup start and profile
 The live site (`deploy/cloudflare-edge/`, docs/WOW_ZERO_CONFIG.md) needs nothing per person: sign in, press Start, tick one box, talk. Its variables are named (without values) as comments in `deploy/cloudflare-edge/wrangler.jsonc`; secrets are set with `npx wrangler secret put <NAME>` by Tony only. Everything below is unset by default, and a missing item never blocks the interview: the feature is absent, or `BLOCKED_EXTERNAL` in the admin view.

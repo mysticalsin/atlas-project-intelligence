@@ -492,12 +492,34 @@ function build(g) {
 }
 export async function resolveProfile(lib, env, user, idp = {}, opts = {}) { return build(await gather(lib, env, user, idp, opts)); }
 
+function fieldTag(value) { return value === undefined ? '' : JSON.stringify(value); }
+// A concurrent edit started from the same snapshot. Keep this call's changes and the other call's changes.
+function mergeFieldMap(base, next, fresh) {
+  const out = { ...(fresh || {}) };
+  const keys = new Set([...Object.keys(base || {}), ...Object.keys(next || {}), ...Object.keys(fresh || {})]);
+  for (const key of keys) {
+    const before = fieldTag(base?.[key]);
+    const wanted = fieldTag(next?.[key]);
+    const stored = fieldTag(fresh?.[key]);
+    if (wanted !== before) {
+      if (next?.[key] === undefined) delete out[key];
+      else out[key] = next[key];
+    } else if (stored !== before) {
+      if (fresh?.[key] === undefined) delete out[key];
+      else out[key] = fresh[key];
+    }
+  }
+  return out;
+}
 function save(lib, g, patch, actor, action, detail) {
   const ident = storedIdentity(lib, g.row, g.row.subject, g.row.tenant);
   return lib.recorded(() => {
-    lib.exec('UPDATE profiles SET subject = ?, tenant = ?, edits = ?, consents = ?, updated_at = ? WHERE rowid = ?', ident.subject, ident.tenant, JSON.stringify(patch.edits ?? g.edits), JSON.stringify(patch.consents ?? g.consents), g.now, g.row.id);
+    const fresh = lib.rows('SELECT edits, consents FROM profiles WHERE rowid = ?', g.row.id)[0] || {};
+    const edits = patch.edits ? mergeFieldMap(g.edits, patch.edits, json(fresh.edits)) : json(fresh.edits);
+    const consents = patch.consents ? mergeFieldMap(g.consents, patch.consents, json(fresh.consents)) : json(fresh.consents);
+    lib.exec('UPDATE profiles SET subject = ?, tenant = ?, edits = ?, consents = ?, updated_at = ? WHERE rowid = ?', ident.subject, ident.tenant, JSON.stringify(edits), JSON.stringify(consents), g.now, g.row.id);
     lib.log('profile', actor, action, detail); // field names and counts only, never values
-    return { ...g, edits: patch.edits ?? g.edits, consents: patch.consents ?? g.consents, row: { ...g.row, subject: ident.subject, tenant: ident.tenant, updated_at: g.now } };
+    return { ...g, edits, consents, row: { ...g.row, subject: ident.subject, tenant: ident.tenant, updated_at: g.now } };
   });
 }
 function cleanEdit(env, g, f, raw) {
@@ -650,8 +672,13 @@ export function daily(lib, now = lib.now(), user = {}) {
   let profiles = 0;
   if (enforced) {
     const cutoff = isoBefore(now, 395);
+    const cutoffMs = Date.parse(cutoff);
     const stale = lib.rows('SELECT rowid AS id, tenant, seen_at FROM profiles')
-      .filter(row => profileFold(row.tenant) === tenant && String(row.seen_at || '') !== '' && String(row.seen_at) < cutoff);
+      .filter(row => {
+        if (profileFold(row.tenant) !== tenant) return false;
+        const seen = Date.parse(row.seen_at);
+        return Number.isFinite(seen) && seen < cutoffMs;
+      });
     profiles = stale.length;
     // The folded tenant filter already chose these rowids. A SQL tenant compare would miss a
     // padded stored tenant. The chunks bind only rowids and commit together. The directory

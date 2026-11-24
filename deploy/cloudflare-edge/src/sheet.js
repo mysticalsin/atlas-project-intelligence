@@ -1,6 +1,8 @@
 // Project reference sheet (Amaris/Mantu template): document ingestion (Workers AI toMarkdown), drafting of the
 // Executive Summary and the eight-section fact sheet with challenge questions, and key-visual suggestions.
 // Nothing is invented: unsupported fields are "To be completed". Known client details are scrubbed before any model.
+import { STOPLIST } from './scrub.js';
+
 export const TBD = 'To be completed';
 export const EXEC = ['summary', 'teamSize', 'duration', 'price', 'contacts'];
 export const SECTIONS = ['industry', 'issue', 'scope', 'methodology', 'deliverables', 'tools', 'team', 'value'];
@@ -43,9 +45,10 @@ Output exactly one JSON object: {"selected": [{"index": 0, "approach": true, "wh
 const str = (v, n) => typeof v === 'string' ? v.replace(/\r/g, '').trim().slice(0, n) : '';
 function parseJSON(text) { if (typeof text !== 'string') return null; const a = text.indexOf('{'), b = text.lastIndexOf('}'); if (a < 0 || b <= a) return null; try { return JSON.parse(text.slice(a, b + 1)); } catch { return null; } }
 export function scrub(text, names) {
-  const list = (names || []).map(n => String(n || '').trim()).filter(n => n.length >= 3);
+  const list = (names || []).map(n => String(n || '').normalize('NFC').trim()).filter(n => n.length >= 3);
   if (!list.length) return String(text || '');
-  return String(text || '').replace(new RegExp(list.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi'), 'the client');
+  const re = new RegExp('(?<![\\p{L}\\p{N}])(?:' + list.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu');
+  return String(text || '').normalize('NFC').replace(re, 'the client');
 }
 
 export function parseDraft(text) {
@@ -58,7 +61,9 @@ export function parseDraft(text) {
 }
 
 export function draftMessages(input) {
-  const i = input && typeof input === 'object' ? input : {}, names = [i.client?.name, i.client?.location, i.client?.contact];
+  const i = input && typeof input === 'object' ? input : {};
+  const contact = String(i.client?.contact || '').normalize('NFC').trim();
+  const names = [i.client?.name, i.client?.location, !contact || (!/\s/.test(contact) && STOPLIST.has(contact.toLowerCase())) ? '' : contact];
   const material = {
     project: i.project && typeof i.project === 'object' ? i.project : {},
     current_sheet: i.current && typeof i.current === 'object' ? i.current : {},

@@ -613,7 +613,7 @@ window.AtlasAuth?.onSignedIn(async()=>{jevStatus=null;await bootInfo();for(const
 $('storageRetry').onclick=async()=>{for(const p of ownProjects().filter(unsynced))await syncToLibrary(p.id,{quiet:true});lastStrip=null;renderStorage();toast(ownProjects().some(unsynced)?'Not saved to ATLAS yet. Try again in a minute.':'Saved to ATLAS.');};
 window.addEventListener('atlas-auth',()=>{lastStrip=null;renderStorage();});
 window.addEventListener('atlas-profile',()=>{if(window.AtlasProfile?.jevRating?.())document.querySelectorAll('.jev-consent').forEach(x=>x.remove());renderSelectors();window.dispatchEvent(new Event('atlas-context'));});
-function nameConnection(){const chip=$('studioConnection'),state=$('voiceState');if(!chip||!state)return;const visible=state.textContent.replace(/\s+/g,' ').trim();chip.setAttribute('aria-label',visible?visible+'. Connection and privacy':'Connection and privacy');}
+function nameConnection(){const chip=$('studioConnection'),state=$('voiceState');if(!chip||!state)return;const visible=state.textContent.replace(/\s+/g,' ').trim();const letters=visible.toLowerCase().replace(/[^a-z]/g,'');const base='Connection and privacy';const devPersona=/(?:^|[?&])as=/.test(location.search);const quietReady=!devPersona&&letters==='ready';chip.setAttribute('aria-label',visible&&!quietReady?visible+'. '+base:base);}
 const voiceStateEl=$('voiceState');if(voiceStateEl&&window.MutationObserver)new MutationObserver(nameConnection).observe(voiceStateEl,{childList:true,characterData:true,subtree:true});
 nameConnection();
 window.AtlasProfile?.load?.();rebuild();

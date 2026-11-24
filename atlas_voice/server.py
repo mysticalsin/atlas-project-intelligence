@@ -245,11 +245,10 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 except Exception:
                     await event('memory', status='unavailable', message='Private memory is unavailable. Continuing without it.')
             prompt = make_prompt(project, preferences)
-            params = {'text_prompt': prompt, 'voice_prompt': voice_name}
-            if len(urlencode(params).encode()) > 7800:
-                raise ValueError('Project context is too long for this PersonaPlex server. Shorten the project description.')
+            params = {'voice_prompt': voice_name}
             upstream = await app['http'].ws_connect(config.personaplex_url, params=params,
                 max_msg_size=131072, heartbeat=20, autoclose=True)
+            await upstream.send_str(prompt)
             # The upstream seed parameter is deliberately omitted: this audited stock version
             # indexes request['seed'] instead of request.query['seed'].
             # Cancellation while the GPU prepares its prompt must not hold the

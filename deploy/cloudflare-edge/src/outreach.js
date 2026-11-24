@@ -322,7 +322,8 @@ function importCsv(lib, user, body) {
   const rejected = [...p.rejected], staffed = [];
   for (const r of p.rows) {
     const cell = h => String(r.cells[idx[h]] ?? '').trim();
-    const projectId = str(cell('project_id'), 60), consultantEmail = email(cell('consultant_email')), mgrRaw = cell('manager_email'), managerEmail = email(mgrRaw), end = cell('end_date');
+    const rawConsultant = cell('consultant_email');
+    const projectId = str(cell('project_id'), 60), consultantEmail = /^[=+\-@\t\r]/.test(rawConsultant) ? '' : email(rawConsultant), mgrRaw = cell('manager_email'), managerEmail = email(mgrRaw), end = cell('end_date');
     const error = !projectId ? 'project_id is required.' : !consultantEmail ? 'consultant_email is not a valid email.' : mgrRaw && !managerEmail ? 'manager_email is not a valid email.'
       : managerEmail && managerEmail === consultantEmail ? 'The N+1 cannot be the consultant.' : end && !isoDate(end) ? 'end_date must be a real date written YYYY-MM-DD.' : '';
     if (error) { rejected.push({ line: r.line, error }); continue; }

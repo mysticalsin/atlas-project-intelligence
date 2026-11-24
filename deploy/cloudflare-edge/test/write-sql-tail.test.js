@@ -60,6 +60,7 @@ test('a consent receipt insert followed by DELETE does not run the delete', () =
 test('workerd 2026-10-23 runs an alias-begin tail and the gate rejects that family', async (t) => {
   const found = locateWorkerd();
   if (!found) {
+    if (process.env.CI) assert.fail('workerd binary is missing and CI is set');
     t.skip(SKIP_REASON);
     return;
   }

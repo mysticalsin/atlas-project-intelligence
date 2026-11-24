@@ -552,7 +552,7 @@ export class Session {
   pickFiller(text) {
     const list = FILLERS[this.spoken()];
     if (!list || this.admin || this.timeUp || this.turns - this.fillerTurn < 2 || String(text).split(/\s+/).length < FILLER_WORDS || /\?\s*$/.test(text)) return '';
-    this.fillerTurn = this.turns; this.lastFiller = (this.lastFiller + 1 + (this.turns % 2)) % list.length;
+    this.fillerTurn = this.turns; this.lastFiller = (this.lastFiller + 1) % list.length;
     return list[this.lastFiller];
   }
 

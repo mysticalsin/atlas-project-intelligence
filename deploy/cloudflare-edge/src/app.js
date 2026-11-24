@@ -196,7 +196,11 @@ export async function handle(request, env, page, opts = {}) {
   }
   finally { await slog.flush(); }
 }
+function rollbackSwitches(env) {
+  return [env?.ATLAS_CHECKPOINT, env?.ATLAS_EVIDENCE_WORKFLOW, env?.ATLAS_ADAPTERS, env?.ATLAS_REPLY_GUARD];
+}
 async function route(request, env, page, { waitUntil, flagsOf, slog }) {
+  rollbackSwitches(env);
   {
     const url = new URL(request.url);
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403, headers: headers(env) });
@@ -310,6 +314,12 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/privacy' && request.method === 'GET') {
       const notice = renderNoticeHtml(RETENTION);
       return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
+    }
+    if (url.pathname === '/' && request.method === 'GET' && demoConflict) {
+      const message = String(demoConflict.error || 'This deployment is refused.');
+      const safe = message.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      const html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>ATLAS</title></head><body><p>' + safe + '</p></body></html>';
+      return new Response(html, { status: 200, headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }) });
     }
     if (url.pathname === '/' && request.method === 'GET') {
       const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });

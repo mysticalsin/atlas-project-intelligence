@@ -244,16 +244,24 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   }
   // 2. what is about the person on OTHER people's references: listed as a consultant, named as the N+1, recorded as the validator, last editor, or an author of a revision. Names and
   // emails become "[erased]" / the erasure token in the live data and in every revision. content_hash is left alone: it still names the revision that was rated and approved (X1, red L5).
-  for (const r of lib.rows('SELECT id, data, state, members, manager_email, updated_by FROM refs WHERE owner != ? AND ' + TENANT_SQL + ' AND (instr(members, ?) > 0 OR manager_email = ? OR updated_by = ? OR instr(data, ?) > 0 OR instr(state, ?) > 0)',
-    email, tenant, ',' + email + ',', email, email, '"' + email + '"', '"' + email + '"')) {
+  for (const r of lib.rows('SELECT id, data, state, members, manager_email, updated_by FROM refs WHERE owner != ? AND ' + TENANT_SQL + ' AND (instr(members, ?) > 0 OR manager_email = ? OR updated_by = ? OR instr(data, ?) > 0 OR instr(state, ?) > 0 OR instr(lower(data), ?) > 0 OR instr(lower(state), ?) > 0)',
+    email, tenant, ',' + email + ',', email, email, '"' + email + '"', '"' + email + '"', email, email)) {
     const listed = String(r.members).includes(',' + email + ',');
+    const dropAddress = value => {
+      if (typeof value === 'string') return mentions(value, email) ? replaceAddress(value, email, token) : value;
+      if (Array.isArray(value)) return value.map(dropAddress);
+      if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, dropAddress(v)]));
+      return value;
+    };
     const scrub = d => {
-      const x = parse(d, null); if (!x) return d;
+      const x = parse(d, null); if (!x) return typeof d === 'string' && mentions(d, email) ? replaceAddress(d, email, token) : d;
       if (x.details?.consultants) x.details.consultants = x.details.consultants.map(c => (String(c.email || '').toLowerCase() === email ? { name: '[erased]', email: '', role: '' } : c));
       if (String(x.validation?.manager?.email || '').toLowerCase() === email) x.validation.manager = { name: '[erased]', email: '' };
-      return JSON.stringify(x);
+      if (Array.isArray(x.sharedWith)) x.sharedWith = x.sharedWith.filter(m => String(m || '').toLowerCase() !== email);
+      return JSON.stringify(dropAddress(x));
     };
     const st = parse(r.state, {}); if (st.validation?.by === email) st.validation.by = token;
+    if (Array.isArray(st.sharedWith)) st.sharedWith = st.sharedWith.filter(m => String(m || '').toLowerCase() !== email);
     const rest = String(r.members).split(',').filter(m => m && m !== email).join(',');
     lib.exec('UPDATE refs SET data = ?, state = ?, members = ?, manager_email = ?, updated_by = ? WHERE id = ?', scrub(r.data), JSON.stringify(st), rest ? ',' + rest + ',' : ',',
       r.manager_email === email ? '' : r.manager_email, r.updated_by === email ? token : r.updated_by, r.id);
@@ -274,6 +282,14 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
     if (typeof spec.erase === 'function') {
       const n = spec.erase(lib, user, { mode: 'subject', tenant, token, email });
       if (n) bump(spec.key, n);
+      continue;
+    }
+    if (spec.table === 'teams_conversations' && ready(lib, spec.table, ['aad_object_id', spec.column])) {
+      // tenant_id here is the directory id, so an ATLAS-tenant match would leave the conversation.
+      const alias = String(email || '').trim().toLowerCase();
+      if (!alias) continue;
+      const n = lib.rows(`SELECT COUNT(*) AS n FROM ${spec.table} WHERE lower(${spec.column}) = ?`, alias)[0].n;
+      if (n) { lib.exec(`DELETE FROM ${spec.table} WHERE lower(${spec.column}) = ?`, alias); bump(spec.key, n); }
       continue;
     }
     if (!ready(lib, spec.table, [spec.column, spec.tenant])) continue;

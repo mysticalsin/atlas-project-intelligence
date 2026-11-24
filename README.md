@@ -20,7 +20,6 @@ Open **ATLAS_Project_Intelligence.html** in a full browser. It contains the inte
 For a stable local preview origin:
 
 ```sh
-cd ATLAS_Project_Intelligence
 python3 scripts/preview.py
 ```
 
@@ -33,7 +32,7 @@ On the approved application server:
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 cp .env.example .env
 # Edit server-side .env. Never put provider credentials into HTML.
 bash scripts/start_gateway.sh
@@ -92,13 +91,13 @@ A weak fit or unresolved confidence/date signal can produce **no strong match**.
 ```sh
 python3 build.py
 node --test tests/*.test.js
-python -m pip install -r requirements-test.txt
-python -m playwright install chromium
-python -m pytest tests/test_*.py -q
-python tests/studio_browser.py
-python tests/sculpture_browser.py
-python tests/intelligence_browser.py
-python tests/depth_browser.py
+python3 -m pip install -r requirements-test.txt
+python3 -m playwright install chromium
+python3 -m pytest tests/test_*.py -q
+python3 tests/studio_browser.py
+python3 tests/sculpture_browser.py
+python3 tests/intelligence_browser.py
+python3 tests/depth_browser.py
 ```
 
 The primary HTML and three compatibility aliases are identical builds. Python gateway and JavaScript source are readable without a frontend framework. `docs/PRD_v12.md` explains quality, voice, memory, wiki, editorial and JEV responsibilities. `docs/EVALUATION_v12.md` contains proposed live pilot scenarios. `tests/RESULTS.json` records actual local checks and their limitations.

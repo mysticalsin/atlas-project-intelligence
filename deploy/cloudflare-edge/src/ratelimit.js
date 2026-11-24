@@ -27,21 +27,39 @@ export const limitOf = (env, name) => { const v = Math.floor(Number(env?.['RL_' 
 
 const BUCKET = /^[a-z0-9-]{1,32}$/;
 const keyOf = (c, subj, now) => `rl:${c.bucket}:${subj ? subj + ':' : ''}${Math.floor(now / c.windowMs)}`;
+const chains = new WeakMap();
+const floors = new WeakMap();
+function serial(storage, fn) {
+  const prev = chains.get(storage) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  chains.set(storage, run.then(() => {}, () => {}));
+  return run;
+}
 
 // checks: [{ bucket, max, windowMs }]. Returns { ok: true, remaining } or { ok: false, retryAfter (seconds, at least 1), bucket }.
-export async function consume(storage, checks, { now = Date.now(), subj = '' } = {}) {
+export async function consume(storage, checks, opts) {
+  return serial(storage, () => consumeUnlocked(storage, checks, opts));
+}
+async function consumeUnlocked(storage, checks, { now = Date.now(), subj = '' } = {}) {
   const valid = (Array.isArray(checks) ? checks : []).slice(0, 4).filter(c => c && BUCKET.test(c.bucket) && Number.isFinite(c.max) && c.max >= 1 && Number.isFinite(c.windowMs) && c.windowMs >= 1000);
   if (!valid.length) return { ok: true, remaining: Infinity };
-  const slots = valid.map(c => ({ ...c, key: keyOf(c, subj, now), until: (Math.floor(now / c.windowMs) + 1) * c.windowMs }));
+  const seen = floors.get(storage) || new Map();
+  floors.set(storage, seen);
+  const slots = valid.map(c => {
+    const floorKey = c.bucket + ':' + subj;
+    const at = Math.max(now, seen.get(floorKey) || 0);
+    return { ...c, at, floorKey, key: keyOf(c, subj, at), until: (Math.floor(at / c.windowMs) + 1) * c.windowMs };
+  });
   const got = await storage.get(slots.map(s => s.key));
   let refused = null;
   for (const s of slots) {
     s.n = Number(got.get(s.key)?.n) || 0;
     if (s.n >= s.max && (!refused || s.until > refused.until)) refused = s;
   }
-  if (refused) return { ok: false, retryAfter: Math.max(1, Math.ceil((refused.until - now) / 1000)), bucket: refused.bucket };
+  for (const s of slots) seen.set(s.floorKey, s.at);
+  if (refused) return { ok: false, retryAfter: Math.max(1, Math.ceil((refused.until - Math.min(now, refused.at)) / 1000)), bucket: refused.bucket };
   await storage.put(Object.fromEntries(slots.map(s => [s.key, { n: s.n + 1, exp: s.until }])));
-  if (slots.some(s => s.n === 0)) await sweep(storage, now); // a new window opened: drop finished ones
+  if (slots.some(s => s.n === 0)) await sweep(storage, Math.max(now, ...slots.map(s => s.at))); // a new window opened: drop finished ones
   return { ok: true, remaining: Math.min(...slots.map(s => s.max - s.n - 1)) };
 }
 

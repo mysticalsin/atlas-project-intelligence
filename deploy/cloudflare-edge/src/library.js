@@ -3,6 +3,7 @@
 // with exec(query, ...params) -> { toArray() } (Durable Object SQLite in production, node:sqlite in tests).
 // Confidential client details are visible only to the record's people and reviewers, and never reach a model.
 import { reviewReference, forModel, clientScrub, contactLead, READY_SCORE } from './review.js';
+import { impact as serverImpact } from './classify.js';
 import { searchText, cosine, lexical, TARGET_POLICY, parseTarget, RERANK_POLICY, parseRerankStrict, candidateCard, SLIDES_POLICY, parseSlides, INSIGHTS_POLICY, parseInsights } from './reuse.js';
 import { str, para, list, email, https, obj, fail } from './util.js';
 // Model input from a record goes through recordView (other library clients, contacts and PII masked too); text a
@@ -368,6 +369,17 @@ export const STATUSES = ['in_review', 'needs_work', 'changes_requested', 'awaiti
 export const PUBLICATION_CHANGE_REFUSED = 'That publication change is not allowed.';
 const REVIEW_DAYS = 180; // references are due for an update six months after their last change
 
+function scoredImpact(j) {
+  if (j?.scores && typeof j.scores === 'object') {
+    try {
+      const n = serverImpact(j.scores);
+      if (Number.isFinite(n)) return Math.max(0, Math.min(100, n));
+    } catch { /* a partial score object is not a stored impact */ }
+    return null;
+  }
+  return Number.isFinite(j?.impact) ? Math.max(0, Math.min(100, j.impact)) : null;
+}
+
 // Server-side bounds for everything a browser may send. Unknown fields are dropped.
 export function cleanReference(raw) {
   raw = obj(raw);
@@ -390,7 +402,7 @@ export function cleanReference(raw) {
       topics: Object.fromEntries(['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'].map(k => [k, str(obj(r.topics)[k], 900)])),
       highlights: list(r.highlights, 4, 200), gaps: list(r.gaps, 6, 200), follow_ups: list(r.follow_ups, 5, 200) } : null,
     jev: j && obj(j.primary).key ? { primary: { key: str(j.primary.key, 40), label: str(j.primary.label, 60) }, also: (Array.isArray(j.also) ? j.also : []).slice(0, 8).map(a => ({ key: str(obj(a).key, 40), label: str(obj(a).label, 60) })),
-      impact: Number.isFinite(j.impact) ? Math.max(0, Math.min(100, j.impact)) : null } : null,
+      impact: scoredImpact(j) } : null,
     validation: { manager: { name: str(obj(v.manager).name, 100), email: email(obj(v.manager).email) }, managerStaff: v.managerStaff === true },
     sheet: raw.sheet && typeof raw.sheet === 'object' ? { oppId: str(obj(raw.sheet).oppId, 40), oppIdPending: obj(raw.sheet).oppIdPending === true, title: str(obj(raw.sheet).title, 140),
       exec: Object.fromEntries(['summary', 'teamSize', 'duration', 'price', 'contacts'].map(k => [k, para(obj(obj(raw.sheet).exec)[k], 1500)])),
@@ -882,7 +894,7 @@ export class Library {
     if (!user.email) throw fail(401, 'Sign in first.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
     body = obj(body);
-    const data = cleanReference(body.reference), localId = str(body.localId, 100), hash = await hashOf(data), at = this.now();
+    const data = cleanReference(body.reference), localId = str(body.localId, 100) || null, hash = await hashOf(data), at = this.now();
     const storyTenant = String(user.tenant || '').trim().toLowerCase();
     const found = body.id ? { id: String(body.id) } : localId ? this.rows("SELECT id FROM refs WHERE owner = ? AND local_id = ? AND lower(COALESCE(tenant, '')) = ?", user.email, localId, storyTenant)[0] : null;
     const row = found ? this.row(found.id) : null;
@@ -1146,7 +1158,16 @@ export class Library {
         return finish(stored, stored && done.escalate && this.complete ? this.secondOpinion(row, gen, done) : null);
       }
     }
-    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete || (async () => { throw new Error('no review agent'); }),
+    const boundedComplete = complete => async messages => {
+      let timer;
+      try {
+        return await Promise.race([
+          Promise.resolve(complete(messages)),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('The review agent did not answer before the deadline.')), 1200); }),
+        ]);
+      } finally { clearTimeout(timer); }
+    };
+    const t0 = Date.now(), q0 = await reviewReference(row.data, this.complete ? boundedComplete(this.complete) : (async () => { throw new Error('no review agent'); }),
       { view: d => recordView(this, d), readyScore: this.readyScore, now: this.now, model: this.model });
     const q = agentQuality({ ...q0, revision: row.revision }, { fallbackReason: fallback, gen, ms: Date.now() - t0 });
     const stored = this.storeRating(row, gen, q, actor);
@@ -1286,7 +1307,7 @@ export class Library {
     k.sources = [...k.sources, ...g.sources].slice(0, 20);
     // No name or email in the text: answers reach models through forModel and recordView (WOW_ZERO_CONFIG §5.9); who
     // contributed stays in details.consultants and members.
-    if (g.answers[1] && !k.answers[1].includes(g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
+    if (g.answers[1] && g.answers[1] !== k.answers[1] && !k.answers[1].includes('\n\nContribution by another consultant: ' + g.answers[1])) k.answers[1] = (k.answers[1] + '\n\nContribution by another consultant: ' + g.answers[1]).trim().slice(0, 6000);
     for (const i of [0, 2, 3, 4, 5]) if (!k.answers[i] && g.answers[i]) k.answers[i] = g.answers[i];
     const moved = acceptPublication(publicationTransition(gone.state, { type: 'merged', id: gone.id }), { id: gone.id, event: 'merged' });
     if (!moved) throw fail(409, PUBLICATION_CHANGE_REFUSED);
@@ -1493,7 +1514,7 @@ export class Library {
   async importAll(user, body = {}) {
     if (user.role !== 'admin') throw fail(403, 'Import is for a verified admin.');
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-    const items = Array.isArray(obj(body).references) ? obj(body).references.slice(0, 500) : [];
+    const items = Array.isArray(obj(body).references) ? obj(body).references.slice(0, 2000) : [];
     const out = { created: 0, unchanged: 0, rejected: [] };
     for (const [i, it] of items.entries()) {
       try { const r = await this.upsert(user, { localId: 'import:' + str(obj(it).externalId || obj(it).id || String(i), 80), reference: obj(it).reference || it }); r.unchanged ? out.unchanged++ : out.created++; }

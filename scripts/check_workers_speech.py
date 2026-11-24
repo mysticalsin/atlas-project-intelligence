@@ -22,7 +22,7 @@ SENTENCE = 'Before the rollout, triage took about forty minutes per ticket in th
 
 async def main():
     key = Path(os.environ.get('WORKERS_AI_KEY_FILE', Path.home() / '.config/atlas/workers-ai.key')).read_text().strip()
-    cfg = SimpleNamespace(workers_account=os.environ.get('WORKERS_AI_ACCOUNT', '294885a27b3cc0a1cbe5d0ccbe38de4f'), workers_key=key,
+    cfg = SimpleNamespace(workers_account=os.environ.get('WORKERS_AI_ACCOUNT', ''), workers_key=key,
                           workers_stt_model='@cf/deepgram/nova-3', workers_tts_model='@cf/deepgram/aura-2-en',
                           workers_voice=os.environ.get('WORKERS_TTS_VOICE', 'harmonia'))
     async with aiohttp.ClientSession() as http:

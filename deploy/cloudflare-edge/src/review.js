@@ -4,6 +4,9 @@
 // A record is 'ready' only with the agent's review, a score at or above the threshold and no blocker.
 
 export const READY_SCORE = 75;
+let STOP_WORDS = new Set();
+export function bindStoplist(words) { STOP_WORDS = words; }
+const ordinaryWord = value => !/\s/.test(value) && STOP_WORDS.has(String(value).toLowerCase());
 const TOPIC = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'];
 export const ISSUE_FIELDS = [...TOPIC, 'deliverables', 'general'];
 export const ISSUE_KINDS = ['vague', 'too_technical', 'unsupported_claim', 'value_unclear', 'activities_not_outcomes', 'missing'];
@@ -65,8 +68,9 @@ export function contactLead(contact) {
 // one-word lead ("Will (CFO)") is left to scrub.recordText, which applies the contact stoplist rule and runs after
 // this scrub on every model path: here, case-insensitive and without a stoplist, it would rewrite every "will".
 export function clientScrub(record) {
-  const lead = contactLead(record?.client?.contact);
-  const names = [...new Set([record?.client?.name, record?.client?.location, record?.client?.contact, /\s/.test(lead) ? lead : ''].map(x => String(x || '').normalize('NFC').trim()).filter(x => x.length >= 3))]
+  const contact = String(record?.client?.contact || '').normalize('NFC').trim();
+  const lead = contactLead(contact);
+  const names = [...new Set([record?.client?.name, record?.client?.location, ordinaryWord(contact) ? '' : contact, /\s/.test(lead) && !ordinaryWord(lead) ? lead : ''].map(x => String(x || '').normalize('NFC').trim()).filter(x => x.length >= 3))]
     .sort((a, b) => b.length - a.length);
   const re = names.length ? new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu') : null;
   return s => typeof s === 'string' && re ? s.normalize('NFC').replace(re, 'the client') : s;

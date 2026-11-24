@@ -69,7 +69,17 @@ export const grantedIn = (state, purpose) => state?.purposes?.[purpose]?.granted
 // Applies the wanted purposes to the state and returns what CHANGED (each entry is a receipt to write): a purpose never granted and not granted now changes nothing.
 // `beforeCommit(changes)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
 // without its receipt.
-export async function applyState(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null } = {}) {
+const consentChains = new WeakMap();
+function serialConsent(storage, fn) {
+  const prev = consentChains.get(storage) || Promise.resolve();
+  const run = prev.then(fn, fn);
+  consentChains.set(storage, run.then(() => {}, () => {}));
+  return run;
+}
+export async function applyState(storage, wanted, opts) {
+  return serialConsent(storage, () => applyStateUnlocked(storage, wanted, opts));
+}
+async function applyStateUnlocked(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null } = {}) {
   const state = await loadState(storage), changes = [];
   for (const p of PURPOSES) {
     if (wanted[p] === undefined) continue;
