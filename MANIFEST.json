@@ -1062,8 +1062,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library-routes.js",
-      "bytes": 11115,
-      "sha256": "1678a87c96e32d42d384c53020d71164784d183731816551faff3282a87ede2b"
+      "bytes": 11549,
+      "sha256": "e2dd062abcaa679f7cc7f8b9d665de4787dedc90adb4c61d8685153c4de4ddc4"
     },
     {
       "path": "deploy/cloudflare-edge/src/library-store.js",
@@ -1112,13 +1112,13 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy-routes.js",
-      "bytes": 3591,
-      "sha256": "b99f25d2b6bf72aa208492219ffb078ff6dc471dccdbcf38893a7593ccd301df"
+      "bytes": 3905,
+      "sha256": "8adbcf1396d2e75fb3f6078d9a4a0fec584cf85a4f5a16adf2b32e695b45dee2"
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy.js",
-      "bytes": 19569,
-      "sha256": "73db65006e8bfd4ef8269a63ae322923c51f055cd62e1c3fd7e1be9486cb9151"
+      "bytes": 22604,
+      "sha256": "e2f3aaf12ab326b703e55ee35219e4867167e4e9aed509e5c5b5783d95abb7b9"
     },
     {
       "path": "deploy/cloudflare-edge/src/profile.js",
@@ -1549,6 +1549,11 @@
       "path": "deploy/cloudflare-edge/test/rating.test.js",
       "bytes": 67951,
       "sha256": "02f2ba24fe10aff30b2a25b9769061f8022275f72e5269e96320d1ba74a903eb"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/receipt-inflight.test.js",
+      "bytes": 3438,
+      "sha256": "620bfc56d5fa924940f39f2b85792f47b10104f57bc962bdbc02f245736a87a3"
     },
     {
       "path": "deploy/cloudflare-edge/test/reconnect-harness.js",
@@ -2282,8 +2287,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 347692,
+      "sha256": "5109f3a9183ef24aa65be9257df455c19a72ec8f7af4b7c821af1563997d19db"
     },
     {
       "path": "handoff/CHANGELOG.md",
