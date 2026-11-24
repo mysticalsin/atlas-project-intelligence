@@ -81,12 +81,14 @@ class Identity:
             raise web.HTTPFound('/')
         import asyncio
         self.sweep()
-        if len(self.flows) >= 100:
+        remote = str(getattr(request, 'remote', '') or '')
+        mine = sum(1 for record in self.flows.values() if len(record) > 2 and record[2] == remote)
+        if mine >= 32:
             raise web.HTTPTooManyRequests(text='Too many pending sign-ins.')
         flow = await asyncio.to_thread(self.client.initiate_auth_code_flow, scopes=[],
                 redirect_uri=self.config.origin + '/auth/callback')
         key = secrets.token_urlsafe(32)
-        self.flows[key] = (flow, time.monotonic() + 600)
+        self.flows[key] = (flow, time.monotonic() + 600, remote)
         response = web.HTTPFound(flow['auth_uri'])
         response.set_cookie('atlas_login_flow', key, httponly=True,
              secure=self.config.origin.startswith('https:'), samesite='Lax', max_age=600, path='/auth')

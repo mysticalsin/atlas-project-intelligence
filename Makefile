@@ -1,5 +1,5 @@
 PYTHON ?= python3
-.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree
+.PHONY: build preview gateway test test-ui test-edge geo-ne-check doctor verify-package verify-dev-tree integrations-lock
 build:
 	$(PYTHON) build.py
 preview: build
@@ -42,6 +42,8 @@ test-ui: build
 	$(PYTHON) tests/admin_metrics_browser.py
 	$(PYTHON) tests/sweep01_c_browser.py
 	$(PYTHON) tests/sweep01_d_browser.py
+	$(PYTHON) tests/confirm_csp_browser.py
+	node --check deploy/cloudflare-edge/teams/vendor/teams-js.mjs
 doctor:
 	$(PYTHON) scripts/doctor.py --profile preview
 # Usage: make verify-package PACKAGE=path/to/extracted-release
@@ -51,3 +53,5 @@ verify-package:
 # Dev checkout only (never used on received release packages).
 verify-dev-tree:
 	$(PYTHON) scripts/check_handoff.py . --dev-git-index
+integrations-lock:
+	pip install --require-hashes -r requirements-integrations.txt

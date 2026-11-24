@@ -133,7 +133,7 @@ class Config:
                 if not re.fullmatch(r'@cf/[\w./-]{1,100}', model):
                     raise ValueError('Workers AI speech models must be @cf/... model IDs.')
             if self.workers_voice not in WORKERS_VOICES:
-                raise ValueError('WORKERS_TTS_VOICE must be one of the aura-1 speakers.')
+                raise ValueError(f'WORKERS_TTS_VOICE must be a speaker configured for {self.workers_tts_model}.')
             if not (self.conversation_url and re.fullmatch(r'[\w.:/@-]{1,120}', self.conversation_model)):
                 raise ValueError('Cloudflare voice needs CONVERSATION_CHAT_URL and CONVERSATION_MODEL.')
         if self.voice_provider == 'kyutai':

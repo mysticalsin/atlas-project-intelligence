@@ -41,6 +41,9 @@ export const GREETINGS = {
   de: 'Hallo, ich bin ATLAS und interviewe Sie zu Ihrem Projekt.',
   it: 'Ciao, sono ATLAS e ti intervisterò sul tuo progetto.',
   nl: 'Hallo, ik ben ATLAS en ik ga je interviewen over je project.',
+  ru: 'Здравствуйте, я ATLAS, и я беру интервью о вашем проекте.',
+  hi: 'नमस्ते, मैं ATLAS हूं और आपके प्रोजेक्ट का इंटरव्यू लूंगा.',
+  ja: 'こんにちは、私はATLASです、プロジェクトについて伺います.',
 };
 export const WELCOME_BACK = {
   en: "Hi, it's ATLAS again, and I'll interview you about your project.",
@@ -50,12 +53,16 @@ export const WELCOME_BACK = {
   de: 'Hallo, hier ist wieder ATLAS, und ich interviewe Sie zu Ihrem Projekt.',
   it: 'Ciao, sono di nuovo ATLAS e ti intervisterò sul tuo progetto.',
   nl: 'Hallo, hier is ATLAS weer, en ik ga je interviewen over je project.',
+  ru: 'Здравствуйте, снова ATLAS, и я беру интервью о вашем проекте.',
+  hi: 'नमस्ते, फिर से ATLAS, और मैं आपके प्रोजेक्ट का इंटरव्यू लूंगा.',
+  ja: 'こんにちは、またATLASです、プロジェクトについて伺います.',
 };
 // Short uptake words ("Right.", "I see.") played from cache as ATLAS takes her turn, while the reply is prepared.
 // Not continuers like "Mm-hm", which mean "keep going" and contradict her taking the floor.
 export const FILLERS = {
   en: ['Okay.', 'Right.', 'I see.', 'Yeah.'], fr: ["D'accord.", 'Je vois.', 'Ah oui.', 'Oui.'], es: ['Vale.', 'Ya veo.', 'Claro.', 'Sí.'], pt: ['Certo.', 'Entendi.', 'Sim.', 'Ah, sim.'],
   de: ['Okay.', 'Ja.', 'Verstehe.', 'Ah ja.'], it: ['Certo.', 'Sì.', 'Capisco.', 'Ah, ok.'], nl: ['Oké.', 'Ja.', 'Duidelijk.', 'Ik snap het.'],
+  ru: ['Хорошо.', 'Понятно.', 'Ясно.', 'Да.'], hi: ['ठीक है.', 'समझा.', 'अच्छा.', 'हाँ.'], ja: ['はい.', 'なるほど.', 'わかりました.', 'ええ.'],
 };
 
 // Words a finished answer almost never ends on, per language (the one the speech recogniser heard). Precision beats
@@ -70,6 +77,7 @@ const TRAIL = Object.fromEntries(Object.entries({
   de: ['und aber weil sondern dass äh ähm öh', ['und dann', 'und also', 'zum beispiel']],
   it: ['e ma quindi o il lo gli di con ehm cioè che', ['e poi', 'e quindi']],
   nl: ['en maar omdat want of de met eh ehm uhm', ['en dan', 'en toen']],
+  ja: ['を が は の に で と も', []],
 }).map(([lang, [words, phrases]]) => [lang, { words: new Set(words.split(' ')), phrases: phrases.map(x => x.split(' ')) }]));
 const TITLES = new Set('dr mr mrs ms prof st mme mlle hr fr sr sra dott sig dhr mevr'.split(' '));
 export function unfinished(text, lang = 'en') {

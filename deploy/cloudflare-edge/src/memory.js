@@ -4,6 +4,7 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 import { TENANT_ID, tenantEnforced } from './authz.js';
+import { STOPLIST } from './scrub.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -33,12 +34,22 @@ export async function bankId(env, sub, tenant = '') {
 const str = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
 const safeId = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
 
-// Replace every recorded client detail (name, location, contact) wherever it appears.
+// Replace a recorded client detail on a Unicode word boundary. A one-word stoplist
+// contact ("Will") is an ordinary word and stays. The client name is still replaced.
+// NFC matches a decomposed store.
+const scrubTerm = value => {
+  const term = String(value || '').normalize('NFC').trim();
+  if (term.length < 3) return '';
+  if (!/\s/.test(term) && STOPLIST.has(term.toLowerCase())) return '';
+  return term;
+};
 export function scrub(text, client = {}) {
-  const names = [client.name, client.location, client.contact].map(x => String(x || '').trim()).filter(x => x.length >= 3);
-  if (!names.length) return text;
-  const re = new RegExp(names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-  return String(text).replace(re, 'the client');
+  const contact = scrubTerm(client?.contact);
+  const names = [client?.name, client?.location].map(value => String(value || '').normalize('NFC').trim()).filter(value => value.length >= 3);
+  if (contact && (/\s/.test(contact) || !STOPLIST.has(contact.toLowerCase()))) names.push(contact);
+  if (!names.length) return String(text ?? '');
+  const re = new RegExp('(?<![\\p{L}\\p{N}])(?:' + names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'giu');
+  return String(text ?? '').normalize('NFC').replace(re, 'the client');
 }
 
 // The project document retained after an interview: the consultant's words and ATLAS's report, labelled self-reported.
@@ -103,6 +114,13 @@ export function hindsight(env, fetcher = fetch) {
   };
 }
 
+// Second resolution stays 14 digits. A fractional second is kept so two notes in the
+// same second do not share a document id. Trailing zeros do not change the second stamp.
+function conversationStamp(now) {
+  const digits = String(now || '').replace(/\D/g, '');
+  return digits.slice(0, 14) + digits.slice(14).replace(/0+$/, '');
+}
+
 // Items for one interview: the project document (upserted by id) plus a dated conversation note.
 export function retainItems(payload, now = new Date().toISOString()) {
   const localId = safeId(payload.localId);
@@ -110,7 +128,7 @@ export function retainItems(payload, now = new Date().toISOString()) {
   const tags = ['atlas', 'project:' + localId];
   const items = [{ content: projectDocument(payload), context: 'ATLAS project interview state (self-reported, not evidence)', document_id: 'project-' + localId, timestamp: now, tags, update_mode: 'replace' }];
   const said = str(payload.conversation, 6000);
-  if (said) items.push({ content: scrub(said, payload.client), context: 'What the consultant said in an ATLAS interview on ' + now.slice(0, 10), document_id: 'conversation-' + localId + '-' + now.replace(/\D/g, '').slice(0, 14), timestamp: now, tags });
+  if (said) items.push({ content: scrub(said, payload.client), context: 'What the consultant said in an ATLAS interview on ' + now.slice(0, 10), document_id: 'conversation-' + localId + '-' + conversationStamp(now), timestamp: now, tags });
   return items;
 }
 

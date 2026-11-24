@@ -31,7 +31,7 @@ Each feature is a module in `src/` reached through `src/features.js`; a module w
 | Story rating (`rating.js`) | `POST /api/library/:id/review`; automatic after save and merge | JEV when `TYPESAFE_API_KEY` is set and the owner allowed it; review agent otherwise |
 | F7 Win loop (`winloop.js`) | `/api/library/wins*` | Rates appear from 5 decided bids; per-story rows only for reviewers, admins and the story's own people (Q13). |
 
-- `src/teams-routes.js` imports the vendored TeamsJS 2.57.0 bundle from `../teams/vendor/teams-js.mjs` (outside `src/`, SHA-256 in `docs/SOURCE_LOCK.json`). It is a plain relative ES module import; wrangler bundling of it has not been run in this build.
+- `src/teams-routes.js` imports the vendored TeamsJS 2.57.0 bundle from `../teams/vendor/teams-js.mjs` (outside `src/`, SHA-256 in `docs/SOURCE_LOCK.json`). It is a plain relative ES module import. `make test-ui` checks that file with `node --check`. A deploy of the bundle has not been performed.
 - A deploy restarts the Durable Objects and cuts live interviews; deploy only when nobody is interviewing.
 
 ## Zero-setup start and the profile (docs/WOW_ZERO_CONFIG.md)

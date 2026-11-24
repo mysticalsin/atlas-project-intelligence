@@ -204,7 +204,8 @@ function answer(ctx, g) {
     return { askId: a.id, field: a.field, status: x ? x.status : 'open', quotes, provenance: 'unverified_speech_recognition' };
   });
   // Where the assignee keeps these answers: only a reference they may see in full.
-  const refId = typeof b.referenceId === 'string' && lib.access(lib.row(b.referenceId), user) === 'full' ? b.referenceId : g.reference_id;
+  if (typeof b.referenceId === 'string' && b.referenceId !== '' && lib.access(lib.row(b.referenceId), user) !== 'full') throw fail(403, 'That reference is not open to you.');
+  const refId = typeof b.referenceId === 'string' && b.referenceId !== '' ? b.referenceId : g.reference_id;
   const count = s => results.filter(r => r.status === s).length;
   lib.recorded(() => {
     lib.exec("UPDATE gap_requests SET status = 'answered', answered_at = ?, results = ?, pseudo = ?, reference_id = ? WHERE id = ?",

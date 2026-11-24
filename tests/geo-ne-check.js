@@ -7,10 +7,14 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const src = process.env.ATLAS_NE_SRC;
-if (!src) {
+if (!Object.hasOwn(process.env, 'ATLAS_NE_SRC')) {
   console.log('ATLAS_NE_SRC is unset. regeneration from the pinned sources is byte-identical to the committed asset was not run.');
   process.exit(0);
+}
+const src = process.env.ATLAS_NE_SRC;
+if (!String(src).trim()) {
+  console.error('ATLAS_NE_SRC is set but empty. regeneration from the pinned sources is byte-identical to the committed asset was not run.');
+  process.exit(1);
 }
 const script = path.join(__dirname, '..', 'scripts', 'build_world_map.py');
 const result = spawnSync('python3', [script, '--src', src, '--check'], { encoding: 'utf8' });

@@ -10,7 +10,7 @@
 // Text and names are compared in Unicode NFC, so a decomposed accent (text pasted from some PDFs) matches its
 // composed form. Compatibility forms (full-width letters, ligatures) are not folded: NFKC would rewrite the
 // author's own text ("m²" -> "m2").
-import { forModel, clientScrub, contactLead } from './review.js';
+import { forModel, clientScrub, contactLead, bindStoplist } from './review.js';
 
 // Frequent English and French words (lower case). A client name that is one of these words is matched only in its
 // stored and upper-case forms; a single-token contact that is one of these words is never matched.
@@ -60,6 +60,7 @@ pas pays peu peut place plus pour pourquoi premier première prix quand que quel
 ses si soleil son sont sous sud sur ta tard temps terre toi ton total totale tous tout toute toutes très trois tu un
 une vert vie ville vos votre vous
 `.trim().split(/\s+/));
+bindStoplist(STOPLIST);
 
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const pattern = alts => '(?<![\\p{L}\\p{N}])(?:' + alts.map(a => esc(a).replace(/\s+/g, '\\s+')).join('|') + ')(?![\\p{L}\\p{N}])';

@@ -196,7 +196,23 @@ export async function handle(request, env, page, opts = {}) {
   }
   finally { await slog.flush(); }
 }
+function rollbackSwitches(env) {
+  return [env?.ATLAS_CHECKPOINT, env?.ATLAS_EVIDENCE_WORKFLOW, env?.ATLAS_ADAPTERS, env?.ATLAS_REPLY_GUARD];
+}
+// The signed-in shell stays so Journey and Library can show the 503 reason.
+// This response drops the conversation invitation. API routes stay 503.
+function refusedShell(page, message) {
+  const safe = String(message || 'This deployment is refused.').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  let body = String(page || '');
+  body = body.replaceAll('Ready when you are', '');
+  body = body.replaceAll('isn\u2019t answering', 'stays refused');
+  body = body.replaceAll("isn't answering", 'stays refused');
+  const banner = '<p id="deploymentRefusal">' + safe + '</p>';
+  body = /<body\b[^>]*>/i.test(body) ? body.replace(/<body\b[^>]*>/i, match => match + banner) : banner + body;
+  return withoutMetaCsp(body);
+}
 async function route(request, env, page, { waitUntil, flagsOf, slog }) {
+  rollbackSwitches(env);
   {
     const url = new URL(request.url);
     if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403, headers: headers(env) });
@@ -310,6 +326,11 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     if (url.pathname === '/privacy' && request.method === 'GET') {
       const notice = renderNoticeHtml(RETENTION);
       return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
+    }
+    if (url.pathname === '/' && request.method === 'GET' && demoConflict) {
+      const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });
+      const body = refusedShell(page.replace(/<script id="atlas-runtime" type="application\/json">[\s\S]*?<\/script>/, block), demoConflict.error);
+      return htmlResponse(env, body, { connect: connectOrigin(env), reportOnlyStrip: true, ...VOICE_PAGE });
     }
     if (url.pathname === '/' && request.method === 'GET') {
       const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });

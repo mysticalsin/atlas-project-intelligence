@@ -147,6 +147,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
+    const locked = !e.status && /locked/i.test(String(e.message || '')) && (e.code === 'ERR_SQLITE_ERROR' || e.code === 'SQLITE_BUSY');
+    if (locked) return json({ error: 'The library is busy. Try that save again.' }, 503);
     return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
   }
 }

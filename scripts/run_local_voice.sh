@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 KEY_FILE="${WORKERS_AI_KEY_FILE:-$HOME/.config/atlas/workers-ai.key}"
 [ -s "$KEY_FILE" ] || { echo "Missing $KEY_FILE (Cloudflare Workers AI token)." >&2; exit 1; }
-ACCOUNT="${WORKERS_AI_ACCOUNT:-294885a27b3cc0a1cbe5d0ccbe38de4f}"
+ACCOUNT="${WORKERS_AI_ACCOUNT:?Set WORKERS_AI_ACCOUNT to the 32 hex account id.}"
 KEY="$(tr -d '[:space:]' < "$KEY_FILE")"
 code=$(curl -s -o /dev/null -w '%{http_code}' -H @<(printf 'Authorization: Bearer %s\n' "$KEY") \
   "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/ai/models/search?search=nova-3")
