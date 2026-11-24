@@ -67,9 +67,63 @@ export async function loadState(storage) {
 }
 export const grantedIn = (state, purpose) => state?.purposes?.[purpose]?.granted === true;
 // Applies the wanted purposes to the state and returns what CHANGED (each entry is a receipt to write): a purpose never granted and not granted now changes nothing.
-// `beforeCommit(changes)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
-// without its receipt.
-export async function applyState(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null } = {}) {
+// `beforeCommit(changes, signal)` runs before the state is stored: when it throws (the receipt could not be written) the state stays as it was, so a choice is never in force
+// without its receipt. Overlapping calls take one lock per storage object, including the receipt post. A beforeCommit that does not settle within
+// commitTimeoutMs (default 5000) aborts `signal`. If that response is still in flight and then succeeds, the receipt has already landed and the grant is stored with it.
+// If it does not succeed, the put is skipped, the lock is released, and the grant is rejected. The receipt post must observe `signal` and must not write after it aborts.
+const consentLocks = new WeakMap();
+const COMMIT_TIMEOUT_MS = 5000;
+
+function withConsentLock(storage, fn) {
+  const prev = consentLocks.get(storage) || Promise.resolve();
+  let release;
+  const done = new Promise(resolve => { release = resolve; });
+  consentLocks.set(storage, done);
+  return prev.then(() => undefined, () => undefined).then(async () => {
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  });
+}
+
+function commitTimeoutError() {
+  return Object.assign(new Error('The consent receipt did not finish in time.'), { code: 'commit-timeout' });
+}
+
+function commitWithin(start, ms) {
+  const limit = Number.isFinite(ms) && ms >= 0 ? ms : COMMIT_TIMEOUT_MS;
+  const ac = new AbortController();
+  const work = typeof start === 'function' ? start(ac.signal) : start;
+  const promise = Promise.resolve(work);
+  return new Promise((resolve, reject) => {
+    let done = false;
+    let grace;
+    const finish = (ok, value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      clearTimeout(grace);
+      if (ok) resolve(value);
+      else reject(value);
+    };
+    // Aborting at the deadline wakes a response that is already in flight. Those
+    // microtasks run before the grace timer, so a receipt that landed still commits.
+    const timer = setTimeout(() => {
+      if (done) return;
+      ac.abort();
+      grace = setTimeout(() => finish(false, commitTimeoutError()), 0);
+    }, limit);
+    promise.then(value => finish(true, value), err => finish(false, err));
+  });
+}
+
+export async function applyState(storage, wanted, options = {}) {
+  return withConsentLock(storage, () => applyStateLocked(storage, wanted, options));
+}
+
+async function applyStateLocked(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null, commitTimeoutMs = COMMIT_TIMEOUT_MS } = {}) {
   const state = await loadState(storage), changes = [];
   for (const p of PURPOSES) {
     if (wanted[p] === undefined) continue;
@@ -78,21 +132,33 @@ export async function applyState(storage, wanted, { mode = 'voice', channel = 'a
     state.purposes[p] = { granted: want, at: now, version: NOTICE_VERSION };
     changes.push({ purpose: p, granted: want, mode, channel });
   }
-  if (changes.length) { if (beforeCommit) await beforeCommit(changes); await storage.put(STATE_KEY, state); }
+  if (changes.length) {
+    if (beforeCommit) await commitWithin(signal => beforeCommit(changes, signal), commitTimeoutMs);
+    await storage.put(STATE_KEY, state);
+  }
   return { state, changes };
 }
 // Appends receipts in the LibraryStore, server to server (the same internal path pattern as the evidence draft). `who`: {user, role, mail, subj} as the Worker verified them.
 // Without a library binding there is nowhere to keep receipts: nothing is written and the caller is told (receipted: false).
-export async function postReceipts(env, who, changes, channel = 'api') {
+export async function postReceipts(env, who, changes, channel = 'api', signal) {
+  if (signal?.aborted) throw commitTimeoutError();
   if (!env?.LIBRARY || !changes.length) return { receipted: false };
   const headers = new Headers({ 'Content-Type': 'application/json', 'x-atlas-user': String(who.user || ''), 'x-atlas-role': String(who.role || 'user'), 'x-atlas-email': String(who.mail || ''), 'x-atlas-subj': String(who.subj || '') });
-  const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/privacy/receipts', { method: 'POST', headers, body: JSON.stringify({ items: changes, channel }) }));
-  if (!res.ok) throw Object.assign(new Error('The consent receipt could not be recorded.'), { code: 'receipt-failed' });
-  return { receipted: true };
+  let res;
+  try {
+    res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal/api/privacy/receipts', { method: 'POST', headers, body: JSON.stringify({ items: changes, channel }), signal }));
+  } catch (err) {
+    if (signal?.aborted) throw commitTimeoutError();
+    throw err;
+  }
+  // The insert already landed when this response is ok, including when the deadline aborted the signal while the response was in flight.
+  if (res.ok) return { receipted: true };
+  if (signal?.aborted) throw commitTimeoutError();
+  throw Object.assign(new Error('The consent receipt could not be recorded.'), { code: 'receipt-failed' });
 }
 // The one call the Interview Durable Object makes for a consent change: state plus receipts, all or nothing.
 export const recordConsent = (storage, env, who, wanted, { mode = 'voice', channel = 'api' } = {}) =>
-  applyState(storage, wanted, { mode, channel, beforeCommit: changes => postReceipts(env, who, changes, channel) });
+  applyState(storage, wanted, { mode, channel, beforeCommit: (changes, signal) => postReceipts(env, who, changes, channel, signal) });
 export async function setBlocked(storage, blocked) { const state = await loadState(storage); state.blocked = { ...state.blocked, ...blocked }; await storage.put(STATE_KEY, state); return state; }
 export const memoryAllowed = state => grantedIn(state, 'memory') && state?.blocked?.memory !== true;
 
@@ -151,7 +217,8 @@ export function stateFromReceipts(lib, subject) {
 }
 
 // items: [{ purpose, granted, mode?, channel? }]. A receipt is appended only when the latest one for that purpose differs (granted flips, or the wording version changed).
-export function recordReceipts(lib, subject, items, { channel = 'api', now = lib.now() } = {}) {
+export function recordReceipts(lib, subject, items, { channel = 'api', now = lib.now(), signal } = {}) {
+  if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
   ensure(lib);
   const subj = subjectOf(subject);
   if (!subj) throw fail(400, 'A subject key is required.');
@@ -168,8 +235,10 @@ export function recordReceipts(lib, subject, items, { channel = 'api', now = lib
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
   }
   if (!pending.length) return { recorded: [], state: latest };
+  if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
   // A healthy chain checkpoints this line with the receipt. A damaged chain stores the receipt and does not append.
   return lib.recorded(() => {
+    if (signal?.aborted) throw Object.assign(fail(409, 'The consent receipt did not finish in time.'), { code: 'commit-timeout' });
     const out = [];
     for (const row of pending) {
       lib.exec('INSERT INTO consent_receipts (id, subject, purpose, granted, notice_version, text_sha256, at, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', row.id, row.subject, row.purpose, row.granted, row.notice_version, row.text_sha256, row.at, row.channel);

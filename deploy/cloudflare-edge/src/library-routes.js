@@ -52,10 +52,15 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     const user = { email: request.headers.get('x-atlas-user') || '', mail: (request.headers.get('x-atlas-email') || '').toLowerCase(), role: request.headers.get('x-atlas-role') || 'user',
       tenant: request.headers.get('x-atlas-tenant') || '', tenantEnforced: resolveTenantEnforcement(env, request.headers.get('x-atlas-tenant-enforced')), subj: request.headers.get('x-atlas-subj') || '' };
     if (!user.email) return json({ error: 'Sign in first.' }, 401);
+    const privacyPath = url.pathname.replace(/^\/api\/privacy\/?/, '').split('/').filter(Boolean);
+    // postReceipts aborts this request when the grant times out. The insert must not run after that.
+    if (request.signal?.aborted && request.method === 'POST' && privacyPath[0] === 'receipts') {
+      return json({ error: 'The consent receipt did not finish in time.', code: 'commit-timeout' }, 409);
+    }
     let body = {};
     if (request.method === 'POST') { try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); } }
     try {
-      const r = await privacyInternal({ lib, user, method: request.method, url, body, env, storage });
+      const r = await privacyInternal({ lib, user, method: request.method, url, body, env, storage, signal: request.signal });
       if (r?.response) return r.response;
       return json(r.body, r.status || 200);
     } catch (e) {

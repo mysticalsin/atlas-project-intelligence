@@ -1,6 +1,12 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-23 — in-flight consent receipt (`cursor/receipt-inflight-timeout-f1fe`)
+
+Inspector note on draft #56 at `c5761a71`, `privacy.js` around the receipt fetch. That path is a consent receipt insert, not deletion or erasure. #56 was not modified.
+
+A commit timeout used to reject the grant after the receipt row had already been inserted and while the library response was still in flight. `commitWithin` now lets that successful response commit the grant. A timeout that gets no successful response still skips the put. The consent security note no longer waits between the insert and the response. Red before the fix: `deploy/cloudflare-edge/test/receipt-inflight.test.js` rejected with `commit-timeout` and left the row. Not merged. Tony t688u stands.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
