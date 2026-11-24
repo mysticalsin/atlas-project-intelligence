@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924213,
+      "sha256": "aef3f7c4bf2cb98e80f80830eb8fff797c3a6d764945f1ea80fd20bb83c05184"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924213,
+      "sha256": "aef3f7c4bf2cb98e80f80830eb8fff797c3a6d764945f1ea80fd20bb83c05184"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924213,
+      "sha256": "aef3f7c4bf2cb98e80f80830eb8fff797c3a6d764945f1ea80fd20bb83c05184"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924213,
+      "sha256": "aef3f7c4bf2cb98e80f80830eb8fff797c3a6d764945f1ea80fd20bb83c05184"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "cb0a7aa012e19271385ef448db59a39e3a3ba7f58eec83c81b48c2ec740fb66c"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 347914,
+      "sha256": "ef02b5e3996869f2912342c5ee196efaa2860a65891a76908b2cbfbeb9bee64b"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2952,8 +2952,8 @@
     },
     {
       "path": "src/styles.css",
-      "bytes": 38940,
-      "sha256": "5b545ed263fb14045449136e11d886409c87246b4741edf8eaa2589bcde43343"
+      "bytes": 39138,
+      "sha256": "8aa1d10086efab1a1b09757d45388d14ff56319368e138218010b7a684d7148d"
     },
     {
       "path": "src/trust-ui.js",
@@ -3009,6 +3009,11 @@
       "path": "tests/admin_metrics_browser.py",
       "bytes": 7985,
       "sha256": "edbd0ed65a4fd704e9c7616b0b80e72107199ba4b298fa9f1f31a10a27739259"
+    },
+    {
+      "path": "tests/aiscore_overflow_browser.py",
+      "bytes": 4086,
+      "sha256": "1a865ceb7f900a7b090b9df8dee3eca42ed8eba1e01c0791f5953060efd5a1ca"
     },
     {
       "path": "tests/ask_browser.py",
