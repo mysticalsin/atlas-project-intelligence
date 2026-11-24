@@ -199,6 +199,18 @@ export async function handle(request, env, page, opts = {}) {
 function rollbackSwitches(env) {
   return [env?.ATLAS_CHECKPOINT, env?.ATLAS_EVIDENCE_WORKFLOW, env?.ATLAS_ADAPTERS, env?.ATLAS_REPLY_GUARD];
 }
+// The signed-in shell stays so Journey and Library can show the 503 reason.
+// This response drops the conversation invitation. API routes stay 503.
+function refusedShell(page, message) {
+  const safe = String(message || 'This deployment is refused.').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  let body = String(page || '');
+  body = body.replaceAll('Ready when you are', '');
+  body = body.replaceAll('isn\u2019t answering', 'stays refused');
+  body = body.replaceAll("isn't answering", 'stays refused');
+  const banner = '<p id="deploymentRefusal">' + safe + '</p>';
+  body = /<body\b[^>]*>/i.test(body) ? body.replace(/<body\b[^>]*>/i, match => match + banner) : banner + body;
+  return withoutMetaCsp(body);
+}
 async function route(request, env, page, { waitUntil, flagsOf, slog }) {
   rollbackSwitches(env);
   {
@@ -316,10 +328,9 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
     }
     if (url.pathname === '/' && request.method === 'GET' && demoConflict) {
-      const message = String(demoConflict.error || 'This deployment is refused.');
-      const safe = message.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-      const html = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>ATLAS</title></head><body><p>' + safe + '</p></body></html>';
-      return new Response(html, { status: 200, headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }) });
+      const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });
+      const body = refusedShell(page.replace(/<script id="atlas-runtime" type="application\/json">[\s\S]*?<\/script>/, block), demoConflict.error);
+      return htmlResponse(env, body, { connect: connectOrigin(env), reportOnlyStrip: true, ...VOICE_PAGE });
     }
     if (url.pathname === '/' && request.method === 'GET') {
       const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });

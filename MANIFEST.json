@@ -942,8 +942,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/app.js",
-      "bytes": 50800,
-      "sha256": "2c22f1052afde158c10decc106fab00f8d40ddf9196fa767288fbbcf3fde248b"
+      "bytes": 51416,
+      "sha256": "2081cf81b6c6ca8c7ff66825e728194890c51d625d5c68e131ae15381673ad6a"
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
@@ -1739,6 +1739,11 @@
       "path": "deploy/cloudflare-edge/test/sweep01-ham.test.js",
       "bytes": 1213,
       "sha256": "9d9bc9e3fd6ed2e59385329cbeeb21fef733f97d968b451cb94ad8193ce7945e"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sweep01-refusal-page.test.js",
+      "bytes": 2194,
+      "sha256": "323db9284ca256f777f1ce16069d4317ca95171423688a011e4aec0cf912adb9"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
