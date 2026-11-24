@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924102,
+      "sha256": "8273f6d76b215cd5fbeb81df9e9993fe35b755d3539560b0fbc0c05324e3ed78"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924102,
+      "sha256": "8273f6d76b215cd5fbeb81df9e9993fe35b755d3539560b0fbc0c05324e3ed78"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924102,
+      "sha256": "8273f6d76b215cd5fbeb81df9e9993fe35b755d3539560b0fbc0c05324e3ed78"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924102,
+      "sha256": "8273f6d76b215cd5fbeb81df9e9993fe35b755d3539560b0fbc0c05324e3ed78"
     },
     {
       "path": "CLAUDE.md",
@@ -742,8 +742,8 @@
     },
     {
       "path": "atlas_voice/editor.py",
-      "bytes": 8483,
-      "sha256": "87793202bb1506746d22f7dee899bf5d15af441c327007133faba4e3ea2423d1"
+      "bytes": 8695,
+      "sha256": "b008cb3c1701922a80711566821c5a9c0a7d85c1f13a9be854f617dbd6aae433"
     },
     {
       "path": "atlas_voice/gaps.py",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "de9fc2d3d2a0bfaf306ab5da3b0a77bd7e8667ea4ddbe01932a305aadca08487"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "5bba6960d0336a96ad263c47e814810f1b9f2c1c7108a9dcef629aecd5661537"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2282,8 +2282,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348309,
+      "sha256": "8e8daa1ad94dd389ee73740886c84d592e9db8de79c5c5f36e6f0e790ba340d0"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2782,8 +2782,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146232,
-      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
+      "bytes": 146301,
+      "sha256": "6994a76151dab4a7fc021cce5ea8faf4dde65a4100e33f941c274f80be093bc8"
     },
     {
       "path": "src/ask-ui.js",
@@ -2817,8 +2817,8 @@
     },
     {
       "path": "src/engine.js",
-      "bytes": 33733,
-      "sha256": "f72f4f20c6dd5a9c4e259cba136e7ab5d04aa28f6383ad0649a05cff26e959a1"
+      "bytes": 33751,
+      "sha256": "c560fd6ef246e364c92fa3f4f4d22d73bc4279185ba2334ef49739ca0c4fc83b"
     },
     {
       "path": "src/erasure-machine.js",
@@ -3082,8 +3082,8 @@
     },
     {
       "path": "tests/engine.test.js",
-      "bytes": 22685,
-      "sha256": "c6b8b87c2b6a2ecc323ec1ec8124558fa9f655f540500c50a3ec63e0ccf5480a"
+      "bytes": 23292,
+      "sha256": "545a049609cddb8ebf3b758834bdc7103c91ac0a5ea77a643c971ff77127130f"
     },
     {
       "path": "tests/erasure-button.test.js",
@@ -3311,6 +3311,11 @@
       "sha256": "213e2813e4b9aad638e5c460cea16d2240c6cf5c703fd72af26363871b33d138"
     },
     {
+      "path": "tests/story_append_browser.py",
+      "bytes": 2321,
+      "sha256": "36c8c9108bde799feb0751f5c15d627c33713790e4755e2a6672f5b10320a8f7"
+    },
+    {
       "path": "tests/storyboard.test.js",
       "bytes": 16685,
       "sha256": "ce49fbdea441adb9f4729bf75e12fa1651706f1ec8ea8d5b326397a9888b8525"
@@ -3377,8 +3382,8 @@
     },
     {
       "path": "tests/test_depth.py",
-      "bytes": 10551,
-      "sha256": "bb246b8d41d83b7de0f1caefe2d80dd6256042190cfafbefd7914bd56f386230"
+      "bytes": 11164,
+      "sha256": "50ee340766ae3b5e6731c442d03d0579081f71da68ca86b2bf98cc9809aebf48"
     },
     {
       "path": "tests/test_edge.py",

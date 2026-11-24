@@ -65,9 +65,13 @@ def parse_edit(data, story):
     candidate=copy.deepcopy(clean_story({k:story[k] for k in ('title','sections','tags','sources','kind','stage','audience','customer_brief')}))
     candidate['title']=title.strip();candidate['sections']={k:'\n\n'.join(v) for k,v in sections.items()}
     # Never silently erase an existing limitation or uncertainty paragraph in the rewrite.
+    # A later refine already carries the retained block. Keep that verbatim tail once, not the whole previous draft.
+    marker='Original scope and limitations (retained verbatim):\n'
     original=story['sections']['limitations']
+    if marker in original:
+        original=original.rsplit(marker, 1)[1]
     if original not in candidate['sections']['limitations']:
-        candidate['sections']['limitations']+='\n\nOriginal scope and limitations (retained verbatim):\n'+original
+        candidate['sections']['limitations']+='\n\n'+marker+original
     candidate=clean_story(candidate)
     return {'candidate':candidate,'citations':citations,'open_questions':questions,
             'editor_version':EDITOR_VERSION,'status':'restricted-candidate','human_review_required':True,
