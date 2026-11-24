@@ -1646,3 +1646,9 @@ winloop.js:68 1
 - Red `9cc45d23ed2acd4155fb8943ea3b9ef235352488` is `tests/tap_targets_browser.py`. At 390 px, `python3 tests/tap_targets_browser.py` exits 1. Three summaries are under 24 px: Orb motion details 17 px, Proposed Git workflow & repository 19 px, Live candidate ledger 19 px. The same run lists 74 visible buttons under 44 px. The skip link and step pips are excluded.
 - The fix sets `min-height: 44px` on `button`, `summary`, and `a.btn` in `src/journey.css`, and makes `.stage-tool`, `.close`, and `.avatar` 44 px squares. Step pips stay 5 px. Colors, logo, and the orb wave are unchanged.
 - After `python3 build.py` the four HTML aliases and `PAGE_SHA256.txt` are `b139710fdf8292bc93d459b6cbfc425f70dc8cb26555898bdc0a9a0804e24133`, 924395 bytes. `csp.generated.js` is unchanged. The tap test exits 0. `node --test tests/page-pin.test.js` is 6 pass. Document and top bar stay 390/390 and 600/600. Not a production-ready claim.
+
+### Session: 2026-11-23 / ATLAS-UI-TAP-TARGETS fit
+
+- The 44 px rule left `#voiceOpenHome` below a 1366 × 768 screen. On a short desktop (`min-width: 1041px` and `max-height: 830px`) `.orb-panel .voice-controls` uses a 12 px top margin. Tap targets stay 44 px. Step pips and the skip link stay as they are. Mobile rules are unchanged.
+- After `python3 build.py` (`ATLAS_HOME_URL` unset) the four HTML aliases and `PAGE_SHA256.txt` are `b2f725459444bb86d9f2f13320a83bbde31fbcd53b1a389cd009831afbf96794`, 924572 bytes. Logo SHA-256 stays `92c5ff21779f09199097a2971c172453017f0d2581a0ced6f54fe486ba9b6c2b`. `csp.generated.js` is unchanged.
+- `MANIFEST.json` is regenerated after this note with `python3 scripts/check_handoff.py . --dev-git-index --write-manifest`, and lists `tests/tap_targets_browser.py`. Not a production-ready claim.

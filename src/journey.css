@@ -30,3 +30,5 @@ button:not(.skip),summary,a.btn{min-height:44px!important}
 .steps button{min-height:0!important;height:5px;width:19px}
 .stage-tool,.close,.avatar{width:44px;height:44px;min-width:44px;min-height:44px!important}
 .connection-pill{min-height:44px!important}
+/* The 44 px pill uses the slack that kept the main control on a 768 px screen. */
+@media(min-width:1041px) and (max-height:830px){.orb-panel .voice-controls{margin-top:12px}}
