@@ -7,6 +7,7 @@ import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, jour
 import { deleteOwnedProfile, ensure as ensureProfile, profileSelection } from './profile.js';
 import { placeholders, readChunks, writeChunks, withTransaction } from './sql-bound.js';
 import { readPublication } from './publication.js';
+import { deleteOwned as deleteOwnedLiving, ownedIds as ownedLiving } from './living.js';
 
 function metricQuery(url, bucket = 'day') {
   const q = url?.searchParams || new URLSearchParams();
@@ -14,7 +15,7 @@ function metricQuery(url, bucket = 'day') {
 }
 function dsarStores() {
   return {
-    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'invitations addressed to this subject in this tenant, and the sender field on invitations this subject sent in this tenant'],
+    coveredLocal: ['journey for this subject and tenant', 'profile for this subject and tenant', 'telemetry for this persona and tenant', 'manager trust for this subject and tenant', 'this subject\'s directory row for this tenant', 'invitations addressed to this subject in this tenant, and the sender field on invitations this subject sent in this tenant', 'living artifacts for this subject and tenant'],
     retained: [
       { store: 'legacy-blank-tenant-rows', action: 'quarantined', note: 'Blank ownership stays blank. It was not assigned a tenant and was not deleted by this request. A privacy export names it legacy_unscoped and does not include its content. An operator resolves it by a reviewed migration that assigns the tenant.' },
       { store: 'hindsight-bank', action: 'not-contacted', note: 'The vendor bank was not called. A subject-only bank is not read when a verified tenant is present, and it was not deleted.' },
@@ -290,7 +291,7 @@ export async function privacyRoutes(ctx) {
     const omittedRows = [...journeyOmitted.rows, ...storyOmitted, ...profileOmitted];
     const omitted = { count: omittedRows.length, rows: omittedRows };
     lib.log('library', user.email, 'dsar export', `${stories.length} stories`);
-    return { body: { subject: user.email, tenant: user.tenant || '', journey, omitted, profile, stories,
+    return { body: { subject: user.email, tenant: user.tenant || '', journey, omitted, profile, stories, living: ownedLiving(lib, user),
       stores: dsarStores(), note: 'This export lists the local rows for this subject and tenant. It is not a vendor-log extract and it does not mean every store was erased.' } };
   }
   if (method === 'POST' && parts[1] === 'delete') {
@@ -322,6 +323,7 @@ export async function privacyRoutes(ctx) {
           if (directory) lib.exec(`DELETE FROM directory WHERE lower(COALESCE(tenant, '')) = ? AND lower(key) IN (${marks})`, tenant, ...keys);
         }
         const invitations = eraseInvitations(lib, user, tenant);
+        const living = deleteOwnedLiving(lib, user);
         const outcomes = [
           { store: 'journey', removed: journey, error: null },
           { store: 'telemetry', removed: telemetry, error: null },
@@ -329,6 +331,7 @@ export async function privacyRoutes(ctx) {
           { store: 'manager-trust', removed: trust, error: null },
           { store: 'directory', removed: directory, error: null },
           { store: 'invitations', removed: invitations.removed, scrubbed: invitations.scrubbed, error: null },
+          { store: 'living-artifacts', removed: living, error: null },
         ];
         lib.log('library', user.email, 'privacy delete', outcomes.map(outcomeDetail).join(', '));
         return outcomes;
