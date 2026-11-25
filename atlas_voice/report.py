@@ -16,6 +16,10 @@ REPORT_LISTS = {'highlights': 4, 'gaps': 6, 'follow_ups': 5}
 FACT_TEXT = {'project_id': 60, 'country': 60, 'industry': 100, 'start': 20, 'end': 20, 'duration': 40}
 FACT_LISTS = {'team_roles': (8, 60), 'technologies': (15, 60), 'deliverables': (10, 160), 'service_lines': (6, 60)}
 REPORT_TRANSCRIPT_CHARS = 24000
+_SPEAKER_ROLES = ('Consultant: ', 'ATLAS: ')
+_OMITTED = '\n[... middle of the interview omitted ...]\n'
+# A cut inside a short line keeps that whole line. A much longer line keeps a labeled tail.
+_TAIL_LINE = 400
 
 REPORT_POLICY = """You write the post-interview report for a Mantu consultant, from the transcript of their project interview and the quote-linked notes an analyst took.
 The transcript alternates ATLAS (the interviewer) and Consultant lines. Interviewer lines are context only, never facts: only the consultant's own words can support a statement.
@@ -67,13 +71,57 @@ class EndMarker:
         return out
 
 
+def _speaker(line):
+    for role in _SPEAKER_ROLES:
+        if line.startswith(role):
+            return role
+    return ''
+
+
+def _bounded_transcript(transcript):
+    """Head and tail of a long interview. Every kept line still names ATLAS or the consultant.
+
+    A raw character cut can start the tail inside an ATLAS sentence. The report model
+    would then read the interviewer's words as the consultant's.
+    """
+    if len(transcript) <= REPORT_TRANSCRIPT_CHARS:
+        return transcript
+    head_n = REPORT_TRANSCRIPT_CHARS // 3
+    tail_n = REPORT_TRANSCRIPT_CHARS - head_n
+    head = transcript[:head_n]
+    if head_n < len(transcript) and transcript[head_n - 1] != '\n':
+        line_start = head.rfind('\n') + 1
+        partial = head[line_start:]
+        role = _speaker(transcript[line_start:])
+        if not (role and len(partial) >= len(role) and partial.startswith(role)):
+            cut = head.rfind('\n')
+            if cut >= 0:
+                head = head[:cut]
+    tail_start = len(transcript) - tail_n
+    line_start = transcript.rfind('\n', 0, tail_start) + 1
+    role = _speaker(transcript[line_start:])
+    extra = tail_start - line_start
+    if extra <= 0 or transcript[tail_start] == '\n':
+        tail = transcript[tail_start:]
+    elif role and extra <= _TAIL_LINE:
+        tail = transcript[line_start:]
+    elif role:
+        chunk = transcript[tail_start:]
+        if extra > len(role) and not transcript[tail_start - 1].isspace() and not transcript[tail_start].isspace():
+            space = chunk.find(' ')
+            newline = chunk.find('\n')
+            if 0 <= space < 40 and (newline < 0 or space < newline):
+                chunk = chunk[space + 1:]
+        tail = role + chunk
+    else:
+        tail = transcript[tail_start:]
+    return head + _OMITTED + tail
+
+
 def report_messages(history, sections, stage):
     """history: [{'role': 'user'|'assistant', 'content': str}] in speaking order. Keeps the head and the tail of long interviews."""
     lines = [('Consultant: ' if m.get('role') == 'user' else 'ATLAS: ') + str(m.get('content', '')) for m in history if m.get('content')]
-    transcript = '\n'.join(lines)
-    if len(transcript) > REPORT_TRANSCRIPT_CHARS:
-        head = REPORT_TRANSCRIPT_CHARS // 3
-        transcript = transcript[:head] + '\n[... middle of the interview omitted ...]\n' + transcript[-(REPORT_TRANSCRIPT_CHARS - head):]
+    transcript = _bounded_transcript('\n'.join(lines))
     notes = {topic: (sections[i] if i < len(sections) else '') for i, topic in enumerate(REPORT_TOPICS)}
     data = {'project_stage': stage, 'interview_transcript': transcript, 'quote_linked_notes': notes}
     return [{'role': 'system', 'content': REPORT_POLICY}, {'role': 'user', 'content': json.dumps(data, ensure_ascii=False, separators=(',', ':'))}]
