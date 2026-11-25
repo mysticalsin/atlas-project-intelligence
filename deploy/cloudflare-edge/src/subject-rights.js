@@ -9,6 +9,7 @@
 import { cleanReference } from './library.js';
 import * as privacy from './privacy.js';
 import { subjectHash } from './privacy.js';
+import * as util from './util.js';
 import { str, obj, fail } from './util.js';
 import { TENANT_ID } from './authz.js';
 import { eraseJourneyFor, eraseTelemetryFor, eraseManagerTrustFor, eraseDirectoryFor, eraseSubjectInvitations } from './operate.js';
@@ -95,6 +96,41 @@ function replaceAddress(text, email, token) {
 }
 function subjectAddresses(user) {
   return [...new Set([user?.email, user?.mail].map(v => String(v || '').trim().toLowerCase()).filter(Boolean))];
+}
+// rate_hits has no tenant. Ask and bid keys end with the verified email.
+// A bucket that names this subject but is not that exact key is collateral the
+// suffix delete would skip (mail alias, a third spelling, or the address in the middle).
+// This slice does not delete those rows. Doing so would be a broader delete than the held decision.
+// When eraseRateHits is absent, the exact keys would be skipped too, so they also refuse.
+// The refusal happens before any rewrite and does not claim a vendor delete.
+const RATE_LEFT = 'Erasure refused. Rate-limit rows for this subject would remain, so nothing was erased.';
+function coveredRateBucket(bucket, form) {
+  if (bucket === form) return true;
+  const mark = ':' + form;
+  return bucket.length > mark.length && bucket.endsWith(mark);
+}
+function subjectRateBuckets(lib, addresses) {
+  if (!ready(lib, 'rate_hits', ['bucket']) || !addresses.length) return [];
+  const out = [];
+  for (const row of lib.rows('SELECT bucket FROM rate_hits')) {
+    const bucket = String(row.bucket ?? '');
+    if (!bucket) continue;
+    if (addresses.some(alias => bucket === alias || mentions(bucket, alias))) out.push(bucket);
+  }
+  return out;
+}
+function settleRateCollateral(lib, user, addresses) {
+  const found = subjectRateBuckets(lib, addresses);
+  if (!found.length) return 0;
+  const email = typeof user?.email === 'string' ? user.email : '';
+  const forms = [...new Set([email, email.trim().toLowerCase()].filter(Boolean))];
+  const helper = typeof util.eraseRateHits === 'function';
+  const skipped = found.filter(bucket => !(helper && forms.some(form => coveredRateBucket(bucket, form))));
+  if (skipped.length) throw fail(409, RATE_LEFT);
+  let removed = 0;
+  for (const form of forms) removed += Number(util.eraseRateHits(lib, form)) || 0;
+  if (subjectRateBuckets(lib, addresses).length) throw fail(409, RATE_LEFT);
+  return removed;
 }
 function scrubManagerEmails(lib, tenant, addresses, token) {
   if (!hasTenantColumn(lib, 'profiles') || !addresses.length) return 0;
@@ -225,6 +261,8 @@ function eraseWithin(lib, user, subj, tenant, { now = lib.now() } = {}) {
   const email = user.email, token = randomToken(), counts = {}, pending = [], touched = [];
   const addresses = subjectAddresses(user);
   const bump = (k, n = 1) => { if (n) counts[k] = (counts[k] || 0) + n; };
+  // Refuses collateral rate_hits before any story, profile, or consent row is rewritten.
+  bump('rateHits', settleRateCollateral(lib, user, addresses));
   const has = n => tableExists(lib, n);
   const hold = (kind, entity, reason) => {
     lib.exec('INSERT INTO erasure_holds (id, kind, entity, subject_hash, reason, at, status, tenant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', lib.newId(), kind, entity, subjectHash(subj), reason, now, 'pending_dpo', tenant);
