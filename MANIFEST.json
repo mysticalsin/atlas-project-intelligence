@@ -2697,8 +2697,8 @@
     },
     {
       "path": "scripts/check_handoff.py",
-      "bytes": 25828,
-      "sha256": "13c2d7ee1e44db14291abfef2f3d30696dbbd2d3e3ca6a9e588e59d183fc3f2a"
+      "bytes": 26229,
+      "sha256": "fb20ca43c24f0b8f19f2216b593b895a0d2adaf2a845a427f099f8b9de4c078f"
     },
     {
       "path": "scripts/check_workers_speech.py",
@@ -3394,6 +3394,11 @@
       "path": "tests/test_entra_claims.py",
       "bytes": 1650,
       "sha256": "d89fca153b047a2cff876dfbdfa890ca7810c86de7f72469f5b051f7fab1fba6"
+    },
+    {
+      "path": "tests/test_git_ads_trailing.py",
+      "bytes": 1044,
+      "sha256": "8a97d5750da49b12895dc56f96558746c7f88e7c42e36c3e07fbc6bc0789a9f6"
     },
     {
       "path": "tests/test_handoff.py",
