@@ -458,16 +458,47 @@ test('pinning: invite stores an actor of exactly 200 characters whole', () => {
   assert.equal(sent.source.length, 200);
 });
 
-// Pinning. Exactly 201 is stored as the first 200 characters. Removing the cap
-// stores the whole actor.
-test('pinning: invite stores the first 200 characters of a 201-character actor', () => {
+// A 201-character actor is a different sender from its 200-character prefix.
+// invite stores the actor whole. Erase matches that stored source and leaves the prefix.
+test('invite stores a 201-character actor whole and erase leaves a different 200-character prefix', async () => {
   const actor = 'e'.repeat(201);
+  const prefix = actor.slice(0, 200);
   assert.equal(actor.length, 201);
+  assert.equal(prefix.length, 200);
+  assert.notEqual(prefix, actor);
   const lib = open();
   const sent = lib.invite(actor, { email: OTHER, title: 'Two hundred one', projectId: 'PRJ-CAP-201' }, caller(actor, 'ada@example.test'));
-  assert.equal(sent.source, str(actor, 200));
-  assert.equal(sent.source.length, 200);
-  assert.notEqual(sent.source, actor);
+  seed(lib, { id: 'prefix-201', email: 'sam@example.test', project: 'PRJ-CAP-201-PREFIX', title: 'Prefix', source: prefix, tenant: A });
+  assert.equal(sent.source, actor);
+  assert.equal(sent.source.length, 201);
+  const response = await privacyDelete(lib, actor, 'ada@example.test');
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.match(lib.rows('SELECT source FROM invitations WHERE id = ?', sent.id)[0].source, ERASED);
+  assert.equal(lib.rows('SELECT source FROM invitations WHERE id = ?', 'prefix-201')[0].source, prefix);
+  const counted = body.outcomes.find(row => row.store === 'invitations');
+  assert.equal(counted.removed, 0);
+  assert.equal(counted.scrubbed, 1);
+});
+
+test('invite stores an actor of exactly 254 characters whole', () => {
+  const actor = 'g'.repeat(254);
+  assert.equal(actor.length, 254);
+  const lib = open();
+  const sent = lib.invite(actor, { email: OTHER, title: 'Ceiling', projectId: 'PRJ-CAP-254' }, caller(actor, 'ada@example.test'));
+  assert.equal(sent.source, actor);
+  assert.equal(sent.source.length, 254);
+});
+
+test('invite refuses a source longer than 254 characters and stores nothing', () => {
+  const actor = 'f'.repeat(255);
+  assert.equal(actor.length, 255);
+  const lib = open();
+  assert.throws(
+    () => lib.invite(actor, { email: OTHER, title: 'Too long', projectId: 'PRJ-CAP-255' }, caller(actor, 'ada@example.test')),
+    err => err.status === 400 && err.message === 'The invitation source is too long.',
+  );
+  assert.equal(lib.rows('SELECT COUNT(*) AS n FROM invitations')[0].n, 0);
 });
 
 // Pinning. The select finds two sent rows. A trigger ignores the update of one,

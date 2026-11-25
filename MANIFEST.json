@@ -1072,8 +1072,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/library.js",
-      "bytes": 104811,
-      "sha256": "7eed1d503d8bdf2eaa3c32f3c0246f62df08fbc82c35a61e9f02a8fe275e25bc"
+      "bytes": 104937,
+      "sha256": "e7ff251af01c3a2e665b20f6ec17b0d086ab07b29d38b595f5dc7e545788b561"
     },
     {
       "path": "deploy/cloudflare-edge/src/memory-routes.js",
@@ -1422,8 +1422,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 31251,
-      "sha256": "64e8e9a94bdc49dd11f19ff3d9e3bc42614eab9dcbce7bb2ca09667528649bee"
+      "bytes": 32899,
+      "sha256": "f29d1197a250e7b99c14d7a2baa1ee1655710e52de971168cf8e06ecb5960969"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
