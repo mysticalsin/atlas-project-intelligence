@@ -16,6 +16,23 @@ NUMBER = re.compile(r'(?<!\w)\d+(?:[.,]\d+)*\s*%?')
 def numbers(text):
     return {m.group().replace(' ', '') for m in NUMBER.finditer(text)}
 
+def kept_span(original, text):
+    """True when original occurs as its own span, not inside a longer word or number."""
+    if not original or not isinstance(text, str):
+        return False
+    start = 0
+    size = len(original)
+    while True:
+        index = text.find(original, start)
+        if index < 0:
+            return False
+        before = index == 0 or not text[index - 1].isalnum()
+        end = index + size
+        after = end == len(text) or not text[end].isalnum()
+        if before and after:
+            return True
+        start = index + 1
+
 def references(story):
     refs = {f'account:{k}': {'text': v, 'kind': 'consultant-account', 'supports': [k]}
             for k, v in story['sections'].items()}
@@ -66,7 +83,7 @@ def parse_edit(data, story):
     candidate['title']=title.strip();candidate['sections']={k:'\n\n'.join(v) for k,v in sections.items()}
     # Never silently erase an existing limitation or uncertainty paragraph in the rewrite.
     original=story['sections']['limitations']
-    if original not in candidate['sections']['limitations']:
+    if not kept_span(original, candidate['sections']['limitations']):
         candidate['sections']['limitations']+='\n\nOriginal scope and limitations (retained verbatim):\n'+original
     candidate=clean_story(candidate)
     return {'candidate':candidate,'citations':citations,'open_questions':questions,
