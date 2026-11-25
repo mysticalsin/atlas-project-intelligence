@@ -812,8 +812,8 @@
     },
     {
       "path": "atlas_voice/server.py",
-      "bytes": 23820,
-      "sha256": "acacb393cb4f4737508add39a53c21ac24e6b6751407dbf315eff5d858c7c79a"
+      "bytes": 24154,
+      "sha256": "c69e073a1caf0d1bb8e988428136e4f336e6355c23ab41205dadd1cdae4b06c2"
     },
     {
       "path": "atlas_voice/speech.py",
@@ -3409,6 +3409,11 @@
       "path": "tests/test_preview.py",
       "bytes": 1523,
       "sha256": "a6c8e4ba34f624d5a3508fa36a22756e65ecdb78adf5b65d0ad1a35224ee0d90"
+    },
+    {
+      "path": "tests/test_preference_retry.py",
+      "bytes": 3177,
+      "sha256": "202d55bf82e5fb34ae0e5947699fc004c1e042fbdb23d5457833bda936b14c7e"
     },
     {
       "path": "tests/test_privacy_config.py",
