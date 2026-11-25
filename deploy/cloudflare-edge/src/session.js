@@ -68,6 +68,22 @@ const GAP_ID = /^[a-f0-9]{32}$/;
 const QUOTE_CHARS = 400, WINDOW_QUOTES = 3, GAP_QUOTES = 5;
 const first = (s, n) => Array.from(s).slice(0, n).join(''); // whole code points: a quote never ends in half a character
 const ws = s => s.split(/\s+/).filter(Boolean).join(' '); // the ledger's quote normalisation
+const alnum = ch => /[\p{L}\p{N}]/u.test(ch);
+// A quote counts only as its own span. "count" inside "account", or "10000" inside "100000", is not that quote.
+function verbatimSpan(quote, source) {
+  if (!quote || !source) return false;
+  let start = 0;
+  while (start <= source.length) {
+    const i = source.indexOf(quote, start);
+    if (i < 0) return false;
+    const before = i === 0 || !alnum(source[i - 1]);
+    const end = i + quote.length;
+    const after = end === source.length || !alnum(source[end]);
+    if (before && after) return true;
+    start = i + 1;
+  }
+  return false;
+}
 // Resolver output is library data, still bounded here: at most GAP_MAX asks, each with an id, a known field, its label and
 // the ask text (already in the other view, placeholders replaced by uniform labels).
 function gapAsks(found) {
@@ -379,13 +395,18 @@ export class Session {
   // details in its field that those turns do not already contain, at most 5 in all. Statuses as the consultant left them.
   gapResults() {
     const details = this.ledger ? this.ledger.details.filter(d => d.active) : [];
+    const heard = [];
+    const transcripts = this.ledger?.transcripts;
+    if (transcripts && typeof transcripts.values === 'function') for (const text of transcripts.values()) heard.push(ws(String(text ?? '')));
     return this.gapStatuses().map(s => {
       const parts = (this.gapAnswers[s.id] || []).flat(), whole = parts.map(ws);
       const quotes = parts.slice(0, WINDOW_QUOTES).map(p => first(p, QUOTE_CHARS));
       for (const d of details) {
         if (quotes.length >= GAP_QUOTES) break;
         const q = first(d.quote, QUOTE_CHARS);
-        if (d.field === s.field && !whole.some(t => t.includes(d.quote)) && !quotes.includes(q)) quotes.push(q);
+        // Already in the answer as its own span: the window quote is enough. A slice of a longer word is not.
+        // A quote the ledger kept only as a slice of a longer token is not copied out either.
+        if (d.field === s.field && heard.some(t => verbatimSpan(d.quote, t)) && !whole.some(t => verbatimSpan(d.quote, t)) && !quotes.includes(q)) quotes.push(q);
       }
       return { askId: s.id, field: s.field, status: s.status, quotes };
     });
