@@ -22,5 +22,14 @@ def test_never_exposes_files_or_fake_provider_api(preview,path):
     assert request(preview,path)[0]==404
 def test_host_boundary(preview):
     assert request(preview,'/',host='attacker.invalid')[0]==403
+@pytest.mark.parametrize('path',[
+    'http://evil.example/',
+    'http://evil.example/ATLAS_Voice_Studio.html',
+    'http://localhost@evil.example/',
+    'http://127.0.0.1@evil.example/',
+    'http://127.0.0.1.evil.example/',
+])
+def test_absolute_form_for_another_host_is_refused(preview,path):
+    assert request(preview,path)[0]==403
 def test_head_and_policy(preview):
     s,h,b=request(preview,'/',method='HEAD');assert s==200 and b==b'';assert 'microphone=()' in h['Permissions-Policy'];assert h['Cache-Control']=='no-store'

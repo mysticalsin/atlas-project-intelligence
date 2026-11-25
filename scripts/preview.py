@@ -18,6 +18,9 @@ class PreviewHandler(BaseHTTPRequestHandler):
         if host not in ('localhost', '127.0.0.1'):
             self.send_error(403, 'Loopback Host required'); return
         request = urlsplit(self.path)
+        # Absolute-form carries its own authority. The Host header must not answer for it.
+        if request.scheme or request.netloc:
+            self.send_error(403, 'Loopback Host required'); return
         if request.path not in ('/', '/ATLAS_Voice_Studio.html') or request.query:
             self.send_error(404); return
         if not HTML.is_file():
