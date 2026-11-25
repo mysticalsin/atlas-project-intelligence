@@ -21,6 +21,7 @@ from .identity import Identity, COOKIE
 from .interview import project_context, make_prompt
 from .memory import PrivateMemory
 from .notes import make_notes
+from .voice_frame import read_start, voice_response
 from .csp import REPORTING_ENDPOINTS, RUNTIME_BLOCK, html_csp, legacy_csp, script_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -198,7 +199,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         subject = identity.require(request)
         if not same_origin(request, config):
             raise web.HTTPForbidden(text='Voice must use the configured same-origin page.')
-        ws = web.WebSocketResponse(max_msg_size=32768, heartbeat=20)
+        ws = voice_response()
         ws.headers['Cache-Control'] = 'no-store'
         await ws.prepare(request)
         held = False
@@ -216,7 +217,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
                 await ws.send_json({'type': kind, **values})
 
         try:
-            init = await asyncio.wait_for(ws.receive_json(), 15)
+            init = await asyncio.wait_for(read_start(ws), 15)
             if not isinstance(init, dict) or set(init) - {'type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language'}:
                 raise ValueError('Invalid start message.')
             if init.get('type') != 'start' or init.get('consent') is not True or not secrets.compare_digest(

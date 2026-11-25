@@ -237,3 +237,52 @@ def test_private_model_launcher_refuses_unexpected_source():
     changed=transform(source)
     assert 'host="127.0.0.1"' in changed and 'access_log=None' in changed
     assert "{request.query['text_prompt']}" not in changed
+
+def test_read_start_bounds_utf8_bytes():
+    from atlas_voice.voice_frame import OVERSIZE, START_MAX_BYTES, read_start
+    prefix,suffix='{"t":"','"}'
+    pad=START_MAX_BYTES-len(prefix)-len(suffix)
+    exact=prefix+('a'*pad)+suffix
+    assert len(exact.encode('utf-8'))==START_MAX_BYTES
+    wide='{"t":"'+('\u00e9'*20000)+'"}'
+    assert len(wide)<START_MAX_BYTES<len(wide.encode('utf-8'))
+    class WS:
+        def __init__(self,text):self.text=text
+        async def receive(self):return aiohttp.WSMessage(aiohttp.WSMsgType.TEXT,self.text,'')
+    assert asyncio.run(read_start(WS(exact)))=={'t':'a'*pad}
+    for text in (exact+'b',wide):
+        with pytest.raises(ValueError) as err:asyncio.run(read_start(WS(text)))
+        assert str(err.value)==OVERSIZE
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('provider,code',[('personaplex','invalid-session'),('kyutai','voice-contract'),('openai','voice-contract')])
+async def test_oversize_voice_start_sends_an_error(provider,code):
+    import socket
+    with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+    origin=f'http://127.0.0.1:{port}'
+    extra={}
+    if provider=='kyutai':
+        extra=dict(voice_provider='kyutai',kyutai_stt_url='ws://127.0.0.1:9',kyutai_tts_url='ws://127.0.0.1:9',
+                   conversation_url='http://127.0.0.1:9/v1',conversation_model='fixture-talker',kyutai_voice='fixture-voice')
+    elif provider=='openai':extra=dict(voice_provider='openai')
+    app=create_app(replace(Config(),origin=origin,port=port,**extra))
+    runner=web.AppRunner(app,access_log=None);await runner.setup();await web.TCPSite(runner,'127.0.0.1',port).start()
+    client=aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar(unsafe=True))
+    try:
+        async with client.get(origin) as response:assert response.status==200
+        async with client.get(origin+'/api/bootstrap') as response:boot=await response.json()
+        ws=await client.ws_connect(origin+'/api/voice',headers={'Origin':origin})
+        project={**PROJECT,'title':'x'*40000}
+        await ws.send_json({'type':'start','consent':True,'csrf':boot['csrf'],'project':project,'voice':'NATF2.pt','capture':False,'memory':False})
+        body=None
+        while True:
+            msg=await asyncio.wait_for(ws.receive(),5)
+            if msg.type==aiohttp.WSMsgType.TEXT:
+                event=json.loads(msg.data)
+                if event['type']=='error':body=event;break
+            elif msg.type in (aiohttp.WSMsgType.CLOSE,aiohttp.WSMsgType.CLOSED,aiohttp.WSMsgType.CLOSING):
+                raise AssertionError('closed before an error: '+str(msg.data))
+        assert body['code']==code and body['message']=='The voice start is larger than 32 KB. Shorten the project and start again.'
+        assert not app['voice_gate'].locked()
+    finally:
+        await client.close();await runner.cleanup()

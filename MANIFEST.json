@@ -712,8 +712,8 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32311,
-      "sha256": "50966c625b8efa6cd745e96eb9e4dfd5ddce3d622b34d8fb9859c947f72e0752"
+      "bytes": 32321,
+      "sha256": "b80e095daad4e08deb01f00870270abdc90b47242a8e1ba49fa728b11d59ac78"
     },
     {
       "path": "atlas_voice/config.py",
@@ -802,8 +802,8 @@
     },
     {
       "path": "atlas_voice/realtime.py",
-      "bytes": 13987,
-      "sha256": "c4008b87678a3eab8e90457a564a63429b45c54cf8d7431312f2b7a90fb8d443"
+      "bytes": 13998,
+      "sha256": "a6344dff7ac479f301262c7eff996bc2737a971843667daebce4f5e8994d1ab4"
     },
     {
       "path": "atlas_voice/report.py",
@@ -812,8 +812,8 @@
     },
     {
       "path": "atlas_voice/server.py",
-      "bytes": 23820,
-      "sha256": "acacb393cb4f4737508add39a53c21ac24e6b6751407dbf315eff5d858c7c79a"
+      "bytes": 23830,
+      "sha256": "dbc22585cea9a36edd81dcfb9bd2a071a892204bca97c3bd7d36bb0b2349aef1"
     },
     {
       "path": "atlas_voice/speech.py",
@@ -824,6 +824,11 @@
       "path": "atlas_voice/textfold.py",
       "bytes": 2977,
       "sha256": "62cde26311a83e376a746302a02b8ca0f2c0625ea8061edb886a7b5b1c5593b8"
+    },
+    {
+      "path": "atlas_voice/voice_frame.py",
+      "bytes": 943,
+      "sha256": "b96e0a3933552467af58ee742f242caa9cecbee6551453b0bf117524e11cb57c"
     },
     {
       "path": "atlas_voice/wiki.py",
@@ -3462,8 +3467,8 @@
     },
     {
       "path": "tests/test_voice.py",
-      "bytes": 12927,
-      "sha256": "c300ce099fe40a917ac8be998193eabc71b4d3b3d3e25a7b72e3f805acb7e8aa"
+      "bytes": 15791,
+      "sha256": "63ffecd18b561e06bd7ce0efdf72ca1b9c6e2b46e4ccd5d6bd1bf8dca5989476"
     },
     {
       "path": "tests/trust_browser.py",
