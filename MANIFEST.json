@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924514,
+      "sha256": "13134e6f1ef1699fff896a0ad5745c3e56dc64de0d5b9545ead6eacfae6fb48c"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924514,
+      "sha256": "13134e6f1ef1699fff896a0ad5745c3e56dc64de0d5b9545ead6eacfae6fb48c"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924514,
+      "sha256": "13134e6f1ef1699fff896a0ad5745c3e56dc64de0d5b9545ead6eacfae6fb48c"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924514,
+      "sha256": "13134e6f1ef1699fff896a0ad5745c3e56dc64de0d5b9545ead6eacfae6fb48c"
     },
     {
       "path": "CLAUDE.md",
@@ -933,7 +933,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "75c1f5f741db091e3520daa025ceeedcd82f27923b792f68276f0310c6e33ac1"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +998,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "6718b24fe8139550918c2abcc6a03df86fb27acdf3efae5efcbe5304aa5a7bb1"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2782,8 +2782,8 @@
     },
     {
       "path": "src/app.js",
-      "bytes": 146232,
-      "sha256": "43f6d8d62381d022a6cc09d6cc09084266875387761735380dcb5b9862eea186"
+      "bytes": 146393,
+      "sha256": "4af8d95acc5485cf3d3f7686b8619fb33beebb2461ae285d69c976f004c11ec6"
     },
     {
       "path": "src/ask-ui.js",
@@ -2817,8 +2817,8 @@
     },
     {
       "path": "src/engine.js",
-      "bytes": 33733,
-      "sha256": "f72f4f20c6dd5a9c4e259cba136e7ab5d04aa28f6383ad0649a05cff26e959a1"
+      "bytes": 34071,
+      "sha256": "160ccff55860d4b4674fa495f5bad1c15bcce57eb6483af8ed28a8bff1efc9ee"
     },
     {
       "path": "src/erasure-machine.js",
@@ -3082,8 +3082,8 @@
     },
     {
       "path": "tests/engine.test.js",
-      "bytes": 22685,
-      "sha256": "c6b8b87c2b6a2ecc323ec1ec8124558fa9f655f540500c50a3ec63e0ccf5480a"
+      "bytes": 23670,
+      "sha256": "7b5bff780a07238fe8f7d73d6d46458fe6a82fc94db7d2fb1484e039783d1139"
     },
     {
       "path": "tests/erasure-button.test.js",

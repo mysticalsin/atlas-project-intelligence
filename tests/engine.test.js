@@ -121,3 +121,19 @@ test('roleFrom survives validateState and importBackup',()=>{const p=filled();p.
  const out=E.validateState(JSON.parse(JSON.stringify(s)));assert.deepEqual(out.profiles[0].projects.map(x=>x.roleFrom),['profile','you']);
  const u=E.importBackup({format:'atlas-workspace',schema:4,profile:{name:'Imported',projects:JSON.parse(JSON.stringify([p,q]))}});assert.deepEqual(u.projects.map(x=>x.roleFrom),['profile','you']);
  const bad=JSON.parse(JSON.stringify(p));bad.roleFrom='<script>';assert.equal(E.cleanProject(bad).roleFrom,'');});
+test('a string quality list is not a row of characters',()=>{
+ assert.deepEqual(E.textList('Missing: evidence'),[]);
+ assert.deepEqual(E.textList(['Missing: evidence','Keep this']),['Missing: evidence','Keep this']);
+ assert.deepEqual(E.textList(['ok',1,null]),['ok']);
+ assert.deepEqual(E.issueList('vague'),[]);
+ assert.deepEqual(E.issueList(['vague']),[]);
+ const issue={field:'evidence',kind:'vague',detail:'Name the owner.'};
+ assert.deepEqual(E.issueList([issue,'x',{field:'evidence',detail:'no kind'}]),[issue]);
+ const src=require('node:fs').readFileSync(require('node:path').join(__dirname,'../src/app.js'),'utf8');
+ assert.match(src,/E\.textList\(q&&q\.blockers\)/);
+ assert.match(src,/E\.textList\(q&&q\.holds\)/);
+ assert.match(src,/E\.textList\(q&&q\.missing\)/);
+ assert.match(src,/E\.textList\(q&&q\.recommendations\)/);
+ assert.match(src,/E\.issueList\(q&&q\.issues\)/);
+ assert.doesNotMatch(src,/q\.(blockers|holds|missing|issues|recommendations)(?:\?\.|\.)map/);
+});
