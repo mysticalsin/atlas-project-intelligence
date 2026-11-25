@@ -702,8 +702,8 @@
     },
     {
       "path": "atlas_voice/audio.py",
-      "bytes": 3060,
-      "sha256": "d42063bdb41283d81f5b6790b0b92c6febf049e60a211adca9c7b6c897a43f48"
+      "bytes": 3804,
+      "sha256": "14e06f938891d21f78324bcf1fa5a5ed97ca40f340df24ef61b18daf942dbe42"
     },
     {
       "path": "atlas_voice/capacity.py",
@@ -3209,6 +3209,11 @@
       "path": "tests/page_harness.py",
       "bytes": 2134,
       "sha256": "1c286c7286d9709e25f0fed60574391a66dd1346a0fff513b8cba13fcdde6a0c"
+    },
+    {
+      "path": "tests/pcm_codec_test.py",
+      "bytes": 1588,
+      "sha256": "bcf218a5e360fca2c4b2cac395670deb77b3e52104fe6eaa8502cc9446d92332"
     },
     {
       "path": "tests/pptx.test.js",
