@@ -1092,8 +1092,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
-      "bytes": 47116,
-      "sha256": "542013df8e28ff4e7ba19d35b8f640ccc6b5596ccba669e021fdba3848d869b9"
+      "bytes": 47117,
+      "sha256": "d6f61b68ffcc906baca2fd945c58226906b34bb70089d8cbb12c623513d57f45"
     },
     {
       "path": "deploy/cloudflare-edge/src/package.json",
@@ -1409,6 +1409,11 @@
       "path": "deploy/cloudflare-edge/test/hold.js",
       "bytes": 532,
       "sha256": "215875b52702ab9cb98a0a30eb157c9504bca0f73a41a701795756a96734e456"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/ics-escape.test.js",
+      "bytes": 2570,
+      "sha256": "04878e47551203ce498ddda9d10a6ea6c8c94d2e40ce5b8b87b44d6ce1dcc03f"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
