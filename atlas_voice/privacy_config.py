@@ -137,14 +137,35 @@ SPECIAL = validate_special(_SPECIAL_CFG)  # {category: [normalised phrase, ...]}
 SPECIAL_EXCLUDE = validate_exclude(_SPECIAL_CFG)
 
 
+def _phrase_span(text, phrase):
+    """True when phrase occurs as its own words in the padded text.
+
+    "coming out of testing" is the phrasal verb. "coming out" on its own, and
+    "coming out of the closet", stay disclosure phrases.
+    """
+    needle = ' ' + phrase + ' '
+    start = 0
+    while True:
+        at = text.find(needle, start)
+        if at < 0:
+            return False
+        if phrase == 'coming out':
+            rest = text[at + len(needle):]
+            if rest.startswith('of ') and 'closet' not in rest.split(' ')[:6]:
+                start = at + len(needle)
+                continue
+        return True
+
+
 def special_categories(text):
     """The special categories whose phrases appear in `text`, in the fixed category order. A flag on a sentence, never a statement about a person:
     callers use it to offer 'keep this private?' and to keep the text out of memory, and never store it against anyone. A place name listed in context_exclude
-    ("Church Street") is removed first (red L14); a phrase in a script written without spaces matches anywhere, any other only as whole words."""
+    ("Church Street") is removed first (red L14); a phrase in a script written without spaces matches anywhere, any other only as whole words.
+    "coming out of" a pilot or a test is not that phrase."""
     s = ' ' + normalize(text) + ' '
     for x in SPECIAL_EXCLUDE:
         s = s.replace(' ' + x + ' ', ' | ')
-    return [cat for cat, phrases in SPECIAL.items() if any((p in s) if _nospace(p) else (' ' + p + ' ' in s) for p in phrases)]
+    return [cat for cat, phrases in SPECIAL.items() if any((p in s) if _nospace(p) else _phrase_span(s, p) for p in phrases)]
 
 
 def uncovered_language(text):

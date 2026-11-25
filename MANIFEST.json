@@ -792,8 +792,8 @@
     },
     {
       "path": "atlas_voice/privacy_config.py",
-      "bytes": 9669,
-      "sha256": "fa9b30e5c1029acf1c03639fc5e70f21e3dd7e42c9fe6582e23aa07ef6a6224a"
+      "bytes": 10358,
+      "sha256": "5eb05b8e914f94ac9b78c0c5598e17f6d2a5723e6d40304d98205c874bc5b415"
     },
     {
       "path": "atlas_voice/quality.py",
@@ -3444,6 +3444,11 @@
       "path": "tests/test_s1_csp.py",
       "bytes": 3159,
       "sha256": "3ef0f322c142a7dcb7e7df373d452a678368693e710e74e0327a3b8b7303fba4"
+    },
+    {
+      "path": "tests/test_special_category_phrase.py",
+      "bytes": 740,
+      "sha256": "cb214b7d755d1f8ff021a972157dfb3e6617595c9c79a58158e76725a96c56f0"
     },
     {
       "path": "tests/test_speech.py",
