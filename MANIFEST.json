@@ -762,13 +762,13 @@
     },
     {
       "path": "atlas_voice/jev.py",
-      "bytes": 9924,
-      "sha256": "c064b007aaea1857e365a65c89ee6e6590ff3de263385a60af07501816f42599"
+      "bytes": 10740,
+      "sha256": "4b89ce213c659a345e6b29d46a8874e42d838dd274a8651f1cd0709b938b2e28"
     },
     {
       "path": "atlas_voice/knowledge_routes.py",
-      "bytes": 10236,
-      "sha256": "fae89712ff9d61364b7bf2d47862a32b549dc19b6b4bd9765683df041c21b35e"
+      "bytes": 13506,
+      "sha256": "c4990f8c4ff80206ba6223a6cd4c94e0a125e20b773406b108d4bf8c85474385"
     },
     {
       "path": "atlas_voice/kyutai.py",
@@ -832,8 +832,8 @@
     },
     {
       "path": "atlas_voice/wiki.py",
-      "bytes": 14447,
-      "sha256": "9c7de69233dbaad064acee3a17d65dd28f871f37d2623125382ed6a046d79198"
+      "bytes": 15592,
+      "sha256": "2fc33b54522db928e9ad23ebbc2704094484376a644df347e7e9effb2e81e6e6"
     },
     {
       "path": "atlas_voice/wiki_export.py",
@@ -3459,6 +3459,11 @@
       "path": "tests/test_story_attachment.py",
       "bytes": 18647,
       "sha256": "95e551209381225052b019aa02bdac30631936a76628804e06c71cfe7286ec10"
+    },
+    {
+      "path": "tests/test_story_registry_links.py",
+      "bytes": 17615,
+      "sha256": "ba9f1de1f030ccf0ddd119af7d116a46a81406c7eedadef8d0350b1692118342"
     },
     {
       "path": "tests/test_teams_package.py",

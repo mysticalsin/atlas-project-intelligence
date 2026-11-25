@@ -87,7 +87,24 @@ class WikiVault:
           CREATE TABLE IF NOT EXISTS approvals(story_id TEXT NOT NULL,revision INTEGER NOT NULL,kind TEXT NOT NULL,reviewer TEXT NOT NULL,reference TEXT NOT NULL,expires REAL NOT NULL,PRIMARY KEY(story_id,revision,kind));
           CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,story_id TEXT,actor TEXT,action TEXT,revision INTEGER,at TEXT);
         ''');self.db.commit()
-    def close(self):self.db.close()
+    def close(self):
+        store=getattr(self,'_story_links',None)
+        if store is not None:store.close()
+        self.db.close()
+    def story_links(self):
+        """Reference store beside this registry. Reads still use the live vault."""
+        store=getattr(self,'_story_links',None)
+        if store is None:
+            from .story_attachment import open_story_attachments
+            store=open_story_attachments(self.root/'story-attachments')
+            self._story_links=store
+        return store
+    def create_story_target(self,subject,spec):return self.story_links().create_target(subject,spec)
+    def story_target(self,subject,target_id):return self.story_links().target(subject,target_id)
+    def attach_story(self,subject,target_id,spec):return self.story_links().attach(subject,self,target_id,spec)
+    def detach_story(self,subject,attachment_id):return self.story_links().detach(subject,self,attachment_id)
+    def list_story_links(self,subject,target_id):return self.story_links().list_attachments(subject,self,target_id)
+    def eligible_story_links(self,subject,target_id):return self.story_links().eligible_stories_for_brief(subject,self,target_id)
     def _row(self,subject,ident):
         if not valid_id(ident):raise ValueError('Unknown story')
         r=self.db.execute('SELECT * FROM stories WHERE id=?',(ident,)).fetchone()

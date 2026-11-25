@@ -28,6 +28,14 @@ def install(app,identity):
         value=await request.json()
         if not isinstance(value,dict) or set(value)-set(allowed):raise ValueError('Invalid request fields')
         return value
+    async def link_body(request,allowed):
+        value=await request.json()
+        if not isinstance(value,dict):raise ValueError('Invalid request fields')
+        extra=set(value)-set(allowed)
+        if extra & {'memory','private_memory','bank','hindsight','content'}:raise ValueError('Private memory is not evidence and cannot be attached')
+        if extra & {'rank','ranking','score','customer_claim','claim','markdown','sections'}:raise ValueError('An attachment cannot rank consultants, add a customer claim, or rewrite the story')
+        if extra:raise ValueError('Invalid request fields')
+        return value
     def guarded(fn):
         async def wrap(request):
             subject=identity.require(request)
@@ -89,15 +97,32 @@ def install(app,identity):
         return web.json_response(vault().withdraw(subject,request.match_info['id'],d['expected_hash']))
     @guarded
     async def rank(request,subject):
-        d=await body(request,('customer_brief','audience','story_ids','consent'))
+        d=await link_body(request,('customer_brief','audience','story_ids','consent','target_id'))
         if d.get('consent') is not True:raise ValueError('Explicit consent is required before sending these eligible records and the customer brief to TypeSafe.')
         a=d.get('audience','customer-anonymized')
         if a!='customer-anonymized':raise ValueError('External JEV processing requires an approved customer-anonymized variant')
         ids=d.get('story_ids',[])
         if not isinstance(ids,list) or len(ids)>12 or any(not isinstance(x,str) for x in ids):raise ValueError('Select up to 12 story IDs')
-        eligible=vault().list(subject,a,eligible_only=True)
-        candidates=[s for s in eligible if s['id'] in ids][:12] if ids else shortlist(eligible,d.get('customer_brief',{}))
-        if not candidates:return web.json_response({'ranked':[],'notice':('No authorized, current, reviewed stories are eligible for this audience. Nothing was sent to JEV.' if not eligible else 'No lexical shortlist match. Try a more specific problem or supply explicit authorized story IDs. No provider call was made.')})
+        linked='target_id' in d
+        if linked:
+            pinned=vault().eligible_story_links(subject,d['target_id'])['stories']
+            if ids:
+                chosen=set(ids)
+                pinned=[item for item in pinned if item['id'] in chosen]
+            live={s['id']:s for s in vault().list(subject,a,eligible_only=True)}
+            candidates=[]
+            for item in pinned:
+                record=live.get(item['id'])
+                if record and record['revision']==item['revision'] and record['content_hash']==item['content_hash'] and record.get('eligible') is True:
+                    candidates.append(record)
+            candidates=candidates[:12]
+            if not candidates:return web.json_response({'ranked':[],'ranks':'stories','consultant_ranking':None,'private_memory_is_not_evidence':True,'notice':'No attached story is currently eligible for this audience. Nothing was sent to JEV. Participants are not ranked.'})
+            selection='attached eligible story references in story-id order, not a consultant ranking'
+        else:
+            eligible=vault().list(subject,a,eligible_only=True)
+            candidates=[s for s in eligible if s['id'] in ids][:12] if ids else shortlist(eligible,d.get('customer_brief',{}))
+            if not candidates:return web.json_response({'ranked':[],'notice':('No authorized, current, reviewed stories are eligible for this audience. Nothing was sent to JEV.' if not eligible else 'No lexical shortlist match. Try a more specific problem or supply explicit authorized story IDs. No provider call was made.')})
+            selection='explicit authorized IDs' if ids else 'weighted lexical shortlist, not a semantic quality score'
         if rank_gate.locked():raise web.HTTPTooManyRequests(text='A ranking request is active; wait for it to finish.')
         def current_for_send(story):
             identity.require(request)
@@ -117,10 +142,33 @@ def install(app,identity):
         result['rankings']=kept
         result['recommended_ids']=[x['id'] for x in kept if x.get('fit_class')=='strong-contextual-fit']
         result['no_strong_match']=not result['recommended_ids']
-        result['candidate_selection']='explicit authorized IDs' if ids else 'weighted lexical shortlist, not a semantic quality score'
+        result['candidate_selection']=selection
         result['customer_brief_hash']=hashlib.sha256(compact(d['customer_brief']).encode()).hexdigest()
         result['rechecked_at']=time.time()
+        if linked:
+            result['ranks']='stories'
+            result['consultant_ranking']=None
+            result['private_memory_is_not_evidence']=True
         return web.json_response(result)
+    @guarded
+    async def create_target(request,subject):
+        d=await link_body(request,('kind','participants'))
+        return web.json_response(vault().create_story_target(subject,d),status=201)
+    @guarded
+    async def read_target(request,subject):
+        return web.json_response(vault().story_target(subject,request.match_info['target_id']))
+    @guarded
+    async def attach_link(request,subject):
+        d=await link_body(request,('story_id','consent'))
+        return web.json_response(vault().attach_story(subject,request.match_info['target_id'],d),status=201)
+    @guarded
+    async def list_links(request,subject):
+        rows=vault().list_story_links(subject,request.match_info['target_id'])
+        return web.json_response({'attachments':rows,'ranks':'stories','consultant_ranking':None,'private_memory_is_not_evidence':True})
+    @guarded
+    async def detach_link(request,subject):
+        await link_body(request,())
+        return web.json_response(vault().detach_story(subject,request.match_info['attachment_id']))
     @guarded
     async def memory_write(request,subject):
         d=await body(request,('content','consent'))
@@ -142,7 +190,10 @@ def install(app,identity):
         except Exception:raise web.HTTPBadGateway(text='Private memory could not be read.') from None
         return web.json_response({'content':text})
     for method,path,fn in [('GET','/api/intelligence',status),('GET','/api/wiki',stories),('GET','/api/wiki/graph',graph),
-       ('POST','/api/wiki',save),('POST','/api/wiki/export',export),('POST','/api/wiki/rank',rank),('GET','/api/wiki/{id}',get),
+       ('POST','/api/wiki',save),('POST','/api/wiki/export',export),('POST','/api/wiki/rank',rank),
+       ('POST','/api/wiki/targets',create_target),('GET','/api/wiki/targets/{target_id}',read_target),
+       ('POST','/api/wiki/targets/{target_id}/attach',attach_link),('GET','/api/wiki/targets/{target_id}/attachments',list_links),
+       ('POST','/api/wiki/attachments/{attachment_id}/detach',detach_link),('GET','/api/wiki/{id}',get),
        ('POST','/api/wiki/{id}/refine',refine),('POST','/api/wiki/{id}/review',review),('POST','/api/wiki/{id}/withdraw',withdraw),
        ('GET','/api/memory/context',memory_read),('POST','/api/memory/context',memory_write),('DELETE','/api/memory/context',memory_delete)]:
         app.router.add_route(method,path,fn)
