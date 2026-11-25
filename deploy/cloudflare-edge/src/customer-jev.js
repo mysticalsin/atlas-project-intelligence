@@ -40,6 +40,27 @@ export function requestBody(story, customer, model, deterministicFreshness = fal
     .map(([k, [q]]) => [k, { type: 'score', instructions: q + ' Use the ordered rubric. Never reward polish, size of claimed savings or client prestige.', criteria: LEVELS }])) };
 }
 
+// The five weighted scores. Partial sums keep the same total the gateway adds.
+// A running total of those terms is a tenth off, and two stories swap order.
+function preciseSum(values) {
+  const partials = [];
+  for (const value of values) {
+    let i = 0, y = value;
+    for (let j = 0; j < partials.length; j++) {
+      const p = partials[j];
+      const hi = y + p;
+      const lo = Math.abs(y) < Math.abs(p) ? y - (hi - p) : p - (hi - y);
+      if (lo !== 0) partials[i++] = lo;
+      y = hi;
+    }
+    partials.length = i;
+    partials[i] = y;
+  }
+  let total = 0;
+  for (const part of partials.slice().sort((a, b) => Math.abs(a) - Math.abs(b))) total += part;
+  return total;
+}
+
 export function parseResult(data, freshness = null) {
   const answers = isDict(data) ? (data.answers ?? {}) : {}, dimensions = {};
   for (const k of Object.keys(DIMENSIONS)) {
@@ -53,7 +74,7 @@ export function parseResult(data, freshness = null) {
     if (Math.abs(digits.reduce((s, d) => s + Number(d) * p[d], 0) - a.score) > 0.05) throw new Error('Score does not match distribution');
     dimensions[k] = { score: a.score, confidence: a.confidence };
   }
-  const composite = pyRound1(Object.entries(DIMENSIONS).reduce((s, [k, [, w]]) => s + dimensions[k].score / 4 * w, 0) * 100);
+  const composite = pyRound1(preciseSum(Object.entries(DIMENSIONS).map(([k, [, w]]) => dimensions[k].score / 4 * w)) * 100);
   return { model: isDict(data) && data.model !== undefined ? pyStr(data.model) : 'unknown', rubric_version: freshness !== null ? 'customer-value-v2' : RUBRIC_VERSION, dimensions,
     relevance_score: composite, confidence: Math.min(...Object.values(dimensions).filter(v => v.confidence !== null).map(v => v.confidence)), notice: NOTICE };
 }

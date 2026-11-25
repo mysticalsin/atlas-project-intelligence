@@ -1012,8 +1012,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/customer-jev.js",
-      "bytes": 12201,
-      "sha256": "b1d5678f1efd65d994b7f05860b675c104a36493538586a4f5968f0c98c28ca6"
+      "bytes": 12886,
+      "sha256": "f4413753d31d3796db672e5072b96b05f1871e5fa2fff788735a3fec81af614c"
     },
     {
       "path": "deploy/cloudflare-edge/src/features.js",
@@ -1554,6 +1554,11 @@
       "path": "deploy/cloudflare-edge/test/reconnect-harness.js",
       "bytes": 789,
       "sha256": "22eca6ffcdf41b1da42b557802486346d43d03d8cfc9855353afbe7fceac5021"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/relevance-order.test.js",
+      "bytes": 1171,
+      "sha256": "ecaa671c9c0d5683c96d2e3520f2c3e410686d71705abb7c4bf31a4d4c0ce6d7"
     },
     {
       "path": "deploy/cloudflare-edge/test/report.test.js",
