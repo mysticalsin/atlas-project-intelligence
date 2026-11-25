@@ -189,7 +189,12 @@ function createRequest(ctx) {
     to = email(b.toEmail);
     if (env.CLIENT_CONFIRM !== '1' || !to || !inList(to, env.EXTERNAL_EMAILS)) return CLIENT_BLOCKED;
   } else ({ to, source } = managerOf(lib, row));
-  if (to === row.owner || to === email(user.mail) || to === user.email || String(row.members || '').includes(',' + to + ','))
+  // Addresses are stored from different writers. The owner keeps the sign-in spelling, a named
+  // manager is folded by email(), and a merged member can keep the other story's owner spelling.
+  // Independence is the person, so the compare folds case and matches a whole list entry.
+  const foldedAddress = value => String(value || '').trim().toLowerCase();
+  const sameAddress = (left, right) => { const folded = foldedAddress(left); return folded !== '' && folded === foldedAddress(right); };
+  if (sameAddress(to, row.owner) || sameAddress(to, user.mail) || sameAddress(to, user.email) || inList(to, row.members))
     throw fail(409, 'The confirmer must be independent: not the consultant, the requester or a team member.');
   const cs = claimRows(lib, row.id, ids);
   if (cs.length !== ids.length) throw fail(404, 'Claim not found on this reference.');
