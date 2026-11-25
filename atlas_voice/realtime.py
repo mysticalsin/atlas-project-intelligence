@@ -18,13 +18,14 @@ from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
 from .quality import InterviewLedger, session_config
+from .voice_frame import read_start, voice_response
 
 VOICES=('cedar','marin','ash','sage','verse')
 
 async def run(request,config,identity,memory,http,gate,active):
     subject=identity.require(request)
     if request.headers.get('Origin')!=config.origin:raise web.HTTPForbidden(text='Invalid voice origin')
-    ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
+    ws=voice_response()
     await ws.prepare(request)
     ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False
     session_cookie=request.cookies.get(COOKIE,'');bytes_in=0;last_input=time.monotonic();started=time.monotonic()
@@ -45,7 +46,7 @@ async def run(request,config,identity,memory,http,gate,active):
             ms=max(0,min(played.get(current_item,0),sent[current_item]/48))
             await send({'type':'conversation.item.truncate','item_id':current_item,'content_index':0,'audio_end_ms':int(ms)})
     try:
-        init=await asyncio.wait_for(ws.receive_json(),15)
+        init=await asyncio.wait_for(read_start(ws),15)
         if not isinstance(init,dict) or set(init)-{'type','csrf','consent','project','voice','capture','memory'} or init.get('type')!='start' or init.get('consent') is not True or not secrets.compare_digest(str(init.get('csrf','')),subject.csrf):raise ValueError('Fresh voice consent and CSRF token required')
         if not config.openai_key:raise ValueError('OpenAI voice API key is not configured on the server')
         project=project_context(init.get('project'));ledger.stage=project.get('stage','Unknown');voice=init.get('voice',config.openai_voice)

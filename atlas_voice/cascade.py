@@ -26,6 +26,7 @@ from .kyutai import stream_chat
 from .report import END_TOKEN, EndMarker, parse_report, report_messages, text_completer
 from .speech import KyutaiSpeech, WorkersSpeech, is_echo
 from .quality import InterviewLedger
+from .voice_frame import read_start, voice_response
 
 HISTORY = 40  # long and stable, so the cached prompt prefix survives a whole interview
 CHUNK = 960  # 20 ms of 24 kHz PCM16, same pacing as the hosted route.
@@ -155,7 +156,7 @@ async def run(request, config, identity, memory, http, gate, active):
     subject = identity.require(request)
     if request.headers.get('Origin') != config.origin:
         raise web.HTTPForbidden(text='Invalid voice origin')
-    ws = web.WebSocketResponse(max_msg_size=32768, heartbeat=20)
+    ws = voice_response()
     await ws.prepare(request)
     session_cookie = request.cookies.get(COOKIE, '')
     held = capture = clean_end = False
@@ -299,7 +300,7 @@ async def run(request, config, identity, memory, http, gate, active):
         start_reply()
 
     try:
-        init = await asyncio.wait_for(ws.receive_json(), 15)
+        init = await asyncio.wait_for(read_start(ws), 15)
         if isinstance(init, dict) and 'gap' in init:  # focused gap interviews need the edge's library and gap requests
             raise ValueError(GAP_REFUSED)
         if (not isinstance(init, dict) or set(init) - {'type', 'csrf', 'consent', 'project', 'voice', 'capture', 'memory', 'language'}
