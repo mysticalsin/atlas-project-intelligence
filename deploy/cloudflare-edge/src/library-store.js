@@ -3,6 +3,7 @@
 // Library passes that same function into ensureChain, so the first audit migration
 // is one synchronous transaction. This module does not run a Cloudflare isolate.
 import { Library } from './library.js';
+import { withProjectValue } from './project-value.js';
 
 const DO_ID = /^[0-9a-f]{64}$/;
 
@@ -10,7 +11,7 @@ export function libraryFromStorage(storage, options = {}) {
   if (typeof storage?.sql?.exec !== 'function' || typeof storage?.transactionSync !== 'function') {
     throw new Error('LibraryStore requires storage.sql and storage.transactionSync.');
   }
-  return new Library(storage.sql, { ...options, transactionSync: fn => storage.transactionSync(fn) });
+  return withProjectValue(new Library(storage.sql, { ...options, transactionSync: fn => storage.transactionSync(fn) }));
 }
 
 // The Durable Object path only. Tests and dev/local-edge.mjs construct Library directly and keep dbId ''.
