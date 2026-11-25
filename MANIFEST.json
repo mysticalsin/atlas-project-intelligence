@@ -1087,8 +1087,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
-      "bytes": 21435,
-      "sha256": "735059c9682137ae5f024df3ec2f06afdf0f0e6b47d59808bc12fe205f19e93f"
+      "bytes": 21937,
+      "sha256": "9ab1d7d83451442370c48b03da6ed69f28f1dbc1d0a3172333c3eafe73ac1989"
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
@@ -1349,6 +1349,11 @@
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
       "bytes": 4946,
       "sha256": "f12dff6c293bc89963567587e2c7de347fc939fe0f0ea74d2f8bddecd0184ee8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/erase-tenant-whitespace.test.js",
+      "bytes": 3473,
+      "sha256": "59470d4d9e934b8b47ea6dd70ff0f33e4ac1f2441aea6832c2c8f778ae6b021d"
     },
     {
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
@@ -2362,8 +2367,8 @@
     },
     {
       "path": "handoff/decisions/invitation-tenant-erase.md",
-      "bytes": 10770,
-      "sha256": "a2897b411214cfe6a5da5f8aa118b7cc15c27e5fac489e802de18e7daff0491f"
+      "bytes": 11394,
+      "sha256": "0bec9bfaf416daa1e23dd2521e85c2c056a4356e604e71d866cf504124bc2639"
     },
     {
       "path": "handoff/decisions/page-pin-refresh.md",

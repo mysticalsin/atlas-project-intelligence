@@ -30,7 +30,7 @@ Sent and received, as the invitation row is stored by `invite`:
 - Received: `invitations.email` is the subject. `invite` writes the consultant address into `email`.
 - Sent: `invitations.source` is the subject and `email` is someone else. `invite` writes `body.source` or the actor into `source`.
 
-The privacy delete already treats the subject as the sign-in `email` and the verified `mail` (`subjectAliases` in `operate.js`). Both aliases count. Comparison is lowercase. The tenant predicate is `lower(trim(COALESCE(tenant, ''))) = ?` for the verified tenant only. `journeyTenant` already trims the caller. A stored tenant with a trailing space is the same tenant.
+The privacy delete already treats the subject as the sign-in `email` and the verified `mail` (`subjectAliases` in `operate.js`). Both aliases count. Comparison is lowercase. The tenant predicate is `lower(trim(COALESCE(tenant, ''), ?)) = ?` for the verified tenant only. The bound character set is the same end-trim as `journeyTenant` (JavaScript trim). A stored tenant with a trailing space, tab, or other JavaScript space is the same tenant. A blank tenant stays blank.
 
 TEST COMMAND (this file):
 
@@ -112,3 +112,7 @@ Review of `7d5d97ba79a0540d1ac361efde126eaa6e2976e5` is REQUEST CHANGES, one new
 A row already stored as the 60-character prefix of a longer actor is left as it is. That prefix cannot be attributed to one person. Those legacy truncated sources need a one-off review. Tony decides.
 
 Readers of `invitations.source` do not assume 60 characters. `invitationView` omits `source`. The interview list renders title, reason, project id, and slot. Analytics selects project id, title, email, and reason. `exportMine` returns the stored `source` with no length cut. The column is `TEXT`. The schedule form's `maxlength="60"` is the project id field. `str(name, 60)` in `outreach.js` is the staffing row, not `invitations.source`.
+
+## JavaScript trim
+
+Fix round 1 used SQLite `trim()` with one argument. That removes U+0020 only. `journeyTenant` uses JavaScript `trim`, so a tab, newline, or other JavaScript space around the same tenant id was a different tenant and was left in place. The compare now binds that JavaScript trim set as the second argument of `trim`, then lowercases. A different tenant, a blank tenant, a tenant with a space in the middle, and U+0085 (which JavaScript trim keeps) stay. Counts are still `changes()` after the write.
