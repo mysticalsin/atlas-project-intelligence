@@ -86,10 +86,24 @@ const URL_RE = /(?:\bhttps?:\/\/|(?<![\p{L}\p{N}.])www\.)[^\s<>"'`]+/giu;
 const EMAIL_RE = /[\p{L}\p{N}._%+-]{1,64}@[\p{L}\p{N}.-]{1,253}\.\p{L}{2,63}/gu;
 const PHONE_RE = /(?<![\p{L}\p{N}])\+?\(?\d(?:[ \t\u00a0().-]{0,2}\d){6,}\)?(?![\p{L}\p{N}])/gu;
 const ISO_DATE = /^(?:19|20)\d\d-\d\d-\d\d$|^(?:19|20)\d\d\s?[-–]\s?(?:19|20)\d\d$/;
+const DAY_THEN = /^((?:19|20)\d\d-\d\d-\d\d[ \t\u00a0]+)(.*)$/u;
+const digitsOf = s => (s.match(/\d/g) || []).length;
+// A clock after an ISO date uses the same space a phone uses, so "2024-03-01 09:30"
+// is swallowed and the day disappears. Drop that date. A phone after it stays.
+function phoneSpan(s) {
+  let start = s.start, text = s.text;
+  for (;;) {
+    if (digitsOf(text) < 7 || ISO_DATE.test(text.trim())) return null;
+    const split = DAY_THEN.exec(text);
+    if (!split) return { ...s, start, end: start + text.length, text };
+    start += split[1].length;
+    text = split[2];
+  }
+}
 function piiSpans(text) {
   const url = spansOf(text, URL_RE, { kind: 'Link' }).map(s => { const t = s.text.replace(/[.,;:!?)\]}]+$/, ''); return { ...s, text: t, end: s.start + t.length }; });
   const mail = spansOf(text, EMAIL_RE, { kind: 'Email' });
-  const phone = spansOf(text, PHONE_RE, { kind: 'Phone' }).filter(s => (s.text.match(/\d/g) || []).length >= 7 && !ISO_DATE.test(s.text.trim()));
+  const phone = spansOf(text, PHONE_RE, { kind: 'Phone' }).map(phoneSpan).filter(Boolean);
   return [...url, ...mail, ...phone].sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
 }
 
