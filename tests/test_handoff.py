@@ -1123,6 +1123,30 @@ def test_release_hygiene_uses_the_git_metadata_helper(tmp_path):
     assert rel in hygiene['detail']
 
 
+def test_release_hygiene_refuses_dev_vars(tmp_path):
+    """A hashed .dev.vars is still a local secret file. .env.example stays allowed."""
+    package = synthetic_package(tmp_path)
+    rows = {
+        'deploy/cloudflare-edge/.dev.vars': b'ATLAS_LOCAL_ONLY=synthetic\n',
+        '.env.example': b'ATLAS_LOCAL_ONLY=\n',
+    }
+    manifest = json.loads((package / 'MANIFEST.json').read_text(encoding='utf-8'))
+    for rel, data in rows.items():
+        _write(package, rel, data)
+        manifest['files'].append({
+            'path': rel,
+            'bytes': len(data),
+            'sha256': hashlib.sha256(data).hexdigest(),
+        })
+    (package / 'MANIFEST.json').write_text(json.dumps(manifest), encoding='utf-8')
+    result = inspect(package, rebuild=False)
+    by_name = {c['name']: c for c in result['checks']}
+    assert by_name['manifest-content']['pass'] is True, by_name['manifest-content']['detail']
+    assert by_name['release-hygiene']['pass'] is False
+    assert 'deploy/cloudflare-edge/.dev.vars' in by_name['release-hygiene']['detail']
+    assert '.env.example' not in by_name['release-hygiene']['detail']
+
+
 def _mini_checkout(tmp_path):
     root = tmp_path / 'repo'
     root.mkdir()

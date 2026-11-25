@@ -467,6 +467,8 @@ def inspect(root: Path, *, rebuild=True, dev_git_index: bool = False) -> dict:
             disallowed.append(rel)
         if p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
             disallowed.append(rel)
+        if p.name == '.dev.vars':
+            disallowed.append(rel)
         if any(is_git_metadata_component(x) or x in ('data', 'vault', 'knowledge-vault', 'secrets', 'credentials', 'backups', '.venv', '__pycache__') for x in p.parts):
             disallowed.append(rel)
     check('release-hygiene', not disallowed, '; '.join(disallowed[:20]) if disallowed else 'No known secret/runtime/font paths in the manifest; this is not a full content secret scan.')
