@@ -962,8 +962,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/bids.js",
-      "bytes": 43027,
-      "sha256": "6c9cfa199fb79d889dd0ff11fca06231f048b5e2723686091a65b50e3997408b"
+      "bytes": 43135,
+      "sha256": "825b5ec1746354e865686c15b9e67f8ebc736218ee46168c2460162f571316e4"
     },
     {
       "path": "deploy/cloudflare-edge/src/bounded.js",
@@ -1409,6 +1409,11 @@
       "path": "deploy/cloudflare-edge/test/hold.js",
       "bytes": 532,
       "sha256": "215875b52702ab9cb98a0a30eb157c9504bca0f73a41a701795756a96734e456"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/industry-word.test.js",
+      "bytes": 3949,
+      "sha256": "13a419b2c7266ae89335217ea9f02913ae7b9b8ce1eec9032f24575ff06e620b"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-closed-code.test.js",
