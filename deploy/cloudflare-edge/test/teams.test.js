@@ -174,6 +174,28 @@ test('teamsClient: null unless connected; tenant token cached until exp - 300 s;
   assert.equal(log.length, 0, 'a disallowed serviceUrl is refused before any request');
 });
 
+test('serviceUrl query or fragment is refused before any request; a path without a slash still posts under that path', async () => {
+  const env = { ...ENV, TEAMS_BOT_SECRET: 'secret-value' }, log = [];
+  const fetcher = async url => {
+    log.push(String(url));
+    if (String(url).startsWith('https://login.microsoftonline.com/')) return json({ access_token: 'tok', expires_in: 3600 });
+    return json({ id: 'sent-1' });
+  };
+  const c = teamsClient(env, fetcher, { now: () => T0, sleep: async () => {} });
+  for (const serviceUrl of [
+    'https://smba.trafficmanager.net/emea?x=1',
+    'https://smba.trafficmanager.net/emea/?x=1',
+    'https://smba.trafficmanager.net/emea#frag',
+    'https://smba.trafficmanager.net/emea?',
+  ]) {
+    log.length = 0;
+    await assert.rejects(c.send({ serviceUrl, conversationId: 'a:conv' }, { type: 'message' }), e => e.status === 400, serviceUrl);
+    assert.equal(log.length, 0, serviceUrl);
+  }
+  await c.send({ serviceUrl: 'https://smba.trafficmanager.net/emea', conversationId: 'a:conv' }, { type: 'message' });
+  assert.equal(log.at(-1), 'https://smba.trafficmanager.net/emea/v3/conversations/a%3Aconv/activities');
+});
+
 // ---- teamsRoutes: the pre-Access endpoint and the launcher.
 function stack(env = ON) {
   const lib = new Library(memorySql(), { now: () => new Date(T0).toISOString() }), seen = [];
