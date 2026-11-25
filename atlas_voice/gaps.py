@@ -59,8 +59,31 @@ def gap_notes(elapsed_s, limit_s, open_labels, admin_note=''):
     return [admin_note, GAP_NOTE, pace]
 
 
+# Chinese, Japanese and Thai do not put spaces between words. Hangul does.
+# Keep these ranges aligned with deploy/cloudflare-edge/src/gap-policy.js.
+_UNSPACED = (
+    (0x0E00, 0x0E7F),  # Thai
+    (0x3040, 0x309F),  # Hiragana
+    (0x30A0, 0x30FF), (0x31F0, 0x31FF), (0xFF66, 0xFF9F),  # Katakana
+    (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF), (0x20000, 0x2A6DF),  # Han
+)
+
+
+def _unspaced_letter(ch):
+    if not ch.isalpha():
+        return False
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in _UNSPACED)
+
+
 def _words(text):
-    return len(text.split())
+    """Whitespace words. A token written only in an unspaced script counts one word per letter."""
+    total = 0
+    for token in text.split():
+        letters = sum(1 for ch in token if _unspaced_letter(ch))
+        other = any(ch.isalpha() and not _unspaced_letter(ch) for ch in token)
+        total += letters if letters and not other else 1
+    return total
 
 
 def gap_status(asks, attempts, answers, details):

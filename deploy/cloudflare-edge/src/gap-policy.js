@@ -6,7 +6,34 @@ import { GAP_WRAP_S, GAP_ATTEMPTS, GAP_ANSWER_WORDS, TIME_PLAN, GAP_LIST_LABEL, 
 const UNKNOWN = new RegExp(UNKNOWN_SRC, 'i'); // the ledger's own UNKNOWN (ledger.js builds it the same way)
 // Python str.split() whitespace: JS \s without U+FEFF, plus the separators U+001C..U+001F and U+0085.
 const WORD_GAP = /(?:[\x1c-\x1f\x85]|[^\S﻿])+/;
-const words = text => text.split(WORD_GAP).filter(Boolean).length;
+// Chinese, Japanese and Thai do not put spaces between words. Hangul does.
+// Same ranges as atlas_voice/gaps.py _UNSPACED.
+const UNSPACED = [
+  [0x0E00, 0x0E7F],
+  [0x3040, 0x309F],
+  [0x30A0, 0x30FF], [0x31F0, 0x31FF], [0xFF66, 0xFF9F],
+  [0x3400, 0x4DBF], [0x4E00, 0x9FFF], [0xF900, 0xFAFF], [0x20000, 0x2A6DF],
+];
+const LETTER = /\p{L}/u;
+function unspacedLetter(ch) {
+  const cp = ch.codePointAt(0);
+  if (!LETTER.test(ch)) return false;
+  for (let i = 0; i < UNSPACED.length; i++) if (cp >= UNSPACED[i][0] && cp <= UNSPACED[i][1]) return true;
+  return false;
+}
+function words(text) {
+  let total = 0;
+  for (const token of String(text).split(WORD_GAP).filter(Boolean)) {
+    let letters = 0, other = false;
+    for (const ch of token) {
+      if (!LETTER.test(ch)) continue;
+      if (unspacedLetter(ch)) letters++;
+      else other = true;
+    }
+    total += letters && !other ? letters : 1;
+  }
+  return total;
+}
 const own = (o, k) => o && typeof o === 'object' && Object.hasOwn(o, k) ? o[k] : undefined;
 // Python's round(): half to even (round(4.5) == 4), so time plans agree for every limit.
 const pyRound = x => { const r = Math.round(x); return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r; };
