@@ -104,7 +104,10 @@ function boundaries(text) {
         if (/^\s*[0-9]{1,2}$/.test(before)) continue; // "1." opens a list item
         if (m[1] === '.') {
           const token = /[\p{L}.]*$/u.exec(before)[0];
-          if (token.split('.').every(part => chars(part) === 1) || ABBREVIATIONS.has(token.toLowerCase())) continue; // "A.I.", "e.g.", "U.S.", "J.", "Dr.", "vs."
+          const initial = token.length > 0 && token.split('.').every(part => chars(part) === 1);
+          // "don't." ends on t. That letter follows an apostrophe, so it is not the initial in "J." or "A.I."
+          const contracted = initial && /['\u2019]$/u.test(before.slice(0, before.length - token.length));
+          if ((initial || ABBREVIATIONS.has(token.toLowerCase())) && !contracted) continue; // "A.I.", "e.g.", "U.S.", "J.", "Dr.", "vs."
         }
       }
     }

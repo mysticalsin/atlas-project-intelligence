@@ -131,7 +131,10 @@ def _boundaries(text):
                     continue  # "1." opens a list item
                 if stops == '.':
                     token = _letters_before(before)
-                    if all(len(part) == 1 for part in token.split('.')) or token.lower() in ABBREVIATIONS:
+                    initial = bool(token) and all(len(part) == 1 for part in token.split('.'))
+                    # "don't." ends on t. That letter follows an apostrophe, so it is not the initial in "J." or "A.I."
+                    contracted = initial and before[:len(before) - len(token)].endswith(("'", "\u2019"))
+                    if (initial or token.lower() in ABBREVIATIONS) and not contracted:
                         continue  # "A.I.", "e.g.", "U.S.", "J.", "Dr.", "vs."
         cuts.append((end, nxt))
         start = nxt
