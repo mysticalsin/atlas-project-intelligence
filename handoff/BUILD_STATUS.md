@@ -1,6 +1,16 @@
 # Build status — continue here
 **Received state:** handoff 12.1 / application v12. The application is not deployed and live providers remain unvalidated.
 
+## 2026-11-25 - release hygiene refuses .dev.vars (ATLAS-HANDOFF-DENYLIST-DEVVARS)
+
+A manifest row for `deploy/cloudflare-edge/.dev.vars` matched its bytes and SHA-256, and `release-hygiene` still passed. The denylist now refuses the exact file name `.dev.vars` in any directory. `.env.example` stays allowed. This is the local Wrangler secret file. It is not a release file.
+
+Touched: `scripts/check_handoff.py`, `tests/test_handoff.py`, `MANIFEST.json`, this note.
+
+The red test failed on the old denylist (`release-hygiene` pass was true). After the check, `python3 -m pytest tests/test_handoff.py::test_release_hygiene_refuses_dev_vars tests/test_handoff.py::test_release_hygiene_uses_the_git_metadata_helper tests/test_handoff.py::test_tampered_file_and_font_detected -q` passed 3, exit 0, 0.04s. This local run is not a CODE pass.
+
+Still BLOCKED_EXTERNAL: live voice needs a private GPU, a licensed voice, and conversation and analyst LLM endpoints. Entra needs a tenant app, assignments, and logout proof. Hindsight needs the pinned fork deployed. None of those are in this slice.
+
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
 
 Narrow loop authorized by Tony: exact top-level `.git` detection, a clean git-failure exit, and the two surviving mutants. Red tests are `7050ae304498d0e4ed79a43017065ebb946ddbe9`. That commit does not refresh `MANIFEST.json`. Running `tests/test_handoff.py` on it fails the new tests and two extra stale-manifest tests: `test_repository_full_handoff_includes_clean_rebuild` and `test_git_archive_of_head_passes_check_handoff`. The fix is `48fbb4575576a6ed264cc8f94948d25452437271`. `MANIFEST.json` is regenerated after this note.
