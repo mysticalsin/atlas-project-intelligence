@@ -71,12 +71,17 @@ export const grantedIn = (state, purpose) => state?.purposes?.[purpose]?.granted
 // without its receipt.
 export async function applyState(storage, wanted, { mode = 'voice', channel = 'api', now = new Date().toISOString(), beforeCommit = null } = {}) {
   const state = await loadState(storage), changes = [];
+  const shown = mode === 'text' ? 'text' : 'voice';
   for (const p of PURPOSES) {
     if (wanted[p] === undefined) continue;
     const want = wanted[p] === true, was = state.purposes[p];
-    if (want === (was?.granted === true) && (!want || !was || was.version === NOTICE_VERSION)) continue; // unchanged (a re-grant under new wording is a change)
-    state.purposes[p] = { granted: want, at: now, version: NOTICE_VERSION };
-    changes.push({ purpose: p, granted: want, mode, channel });
+    const prior = was?.mode === 'text' ? 'text' : 'voice';
+    // A re-grant is a new receipt when the sentence on screen changed. Draft text mode
+    // is a different sentence from the voice sentence, under the same notice version.
+    const sameWording = !!was && was.version === NOTICE_VERSION && textHash(p, prior) === textHash(p, shown);
+    if (want === (was?.granted === true) && (!want || sameWording)) continue;
+    state.purposes[p] = { granted: want, at: now, version: NOTICE_VERSION, mode: shown };
+    changes.push({ purpose: p, granted: want, mode: shown, channel });
   }
   if (changes.length) { if (beforeCommit) await beforeCommit(changes); await storage.put(STATE_KEY, state); }
   return { state, changes };
@@ -150,21 +155,27 @@ export function stateFromReceipts(lib, subject) {
   return out;
 }
 
-// items: [{ purpose, granted, mode?, channel? }]. A receipt is appended only when the latest one for that purpose differs (granted flips, or the wording version changed).
+// items: [{ purpose, granted, mode?, channel? }]. A receipt is appended only when the latest one for that purpose differs (granted flips, the notice version changed, or the sentence hash changed).
 export function recordReceipts(lib, subject, items, { channel = 'api', now = lib.now() } = {}) {
   ensure(lib);
   const subj = subjectOf(subject);
   if (!subj) throw fail(400, 'A subject key is required.');
   const list = Array.isArray(items) ? items.slice(0, RECEIPT_PURPOSES.length * 2) : [], latest = stateFromReceipts(lib, subj), pending = [];
+  const hashes = {};
+  for (const r of lib.rows('SELECT purpose, text_sha256 FROM consent_receipts WHERE subject = ? ORDER BY at, rowid', subj)) hashes[r.purpose] = r.text_sha256;
   for (const it of list) {
     const i = obj(it), purpose = String(i.purpose || '');
     if (!RECEIPT_PURPOSES.includes(purpose) || typeof i.granted !== 'boolean') continue;
     const prev = latest[purpose];
-    if (prev && prev.granted === i.granted && (!i.granted || prev.version === NOTICE_VERSION)) continue;
+    const mode = i.mode === 'text' ? 'text' : 'voice';
+    const nextHash = textHash(purpose, mode);
+    // Same grant and same sentence: nothing new. A typed draft sentence is not the voice sentence.
+    if (prev && prev.granted === i.granted && (!i.granted || (prev.version === NOTICE_VERSION && hashes[purpose] === nextHash))) continue;
     if (!prev && !i.granted) continue; // never granted and not granted now: nothing to evidence
-    const mode = i.mode === 'text' ? 'text' : 'voice', ch = CHANNELS.includes(i.channel) ? i.channel : CHANNELS.includes(channel) ? channel : 'api';
-    const row = { id: lib.newId(), subject: subj, purpose, granted: i.granted ? 1 : 0, notice_version: NOTICE_VERSION, text_sha256: textHash(purpose, mode), at: now, channel: ch };
+    const ch = CHANNELS.includes(i.channel) ? i.channel : CHANNELS.includes(channel) ? channel : 'api';
+    const row = { id: lib.newId(), subject: subj, purpose, granted: i.granted ? 1 : 0, notice_version: NOTICE_VERSION, text_sha256: nextHash, at: now, channel: ch };
     pending.push(row);
+    hashes[purpose] = nextHash;
     latest[purpose] = { granted: i.granted, version: NOTICE_VERSION, at: now, channel: row.channel };
   }
   if (!pending.length) return { recorded: [], state: latest };
