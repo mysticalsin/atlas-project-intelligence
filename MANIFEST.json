@@ -1182,8 +1182,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sheet.js",
-      "bytes": 10158,
-      "sha256": "ff8cde8f67a43662b27fa12e3273059f7b22f07748d27e6cce24bb524afdde41"
+      "bytes": 10670,
+      "sha256": "98238f75f632f872d95103da85516b668868eb1c83fd98e5e2c603639a3834f2"
     },
     {
       "path": "deploy/cloudflare-edge/src/snippets.js",
@@ -1689,6 +1689,11 @@
       "path": "deploy/cloudflare-edge/test/session.test.js",
       "bytes": 111364,
       "sha256": "4b59d9b3a147cfd7a3722aac039f2d165036aa60717e46722f6d76136c0a8a4d"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sheet-name-escape.test.js",
+      "bytes": 2130,
+      "sha256": "a57ac5255999cb21520ba7d781da89e95798ee494e0a98f5c6eebae3c419f5af"
     },
     {
       "path": "deploy/cloudflare-edge/test/sheet.test.js",

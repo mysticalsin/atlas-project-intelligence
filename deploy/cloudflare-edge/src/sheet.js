@@ -48,6 +48,19 @@ export function scrub(text, names) {
   return String(text || '').replace(new RegExp(list.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi'), 'the client');
 }
 
+// Strings only. The caller serialises after this, so a quote, a backslash, or a
+// newline in a name is still the character the matcher was given.
+function scrubData(value, names) {
+  if (typeof value === 'string') return scrub(value, names);
+  if (Array.isArray(value)) return value.map(item => scrubData(item, names));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = scrubData(value[key], names);
+    return out;
+  }
+  return value;
+}
+
 export function parseDraft(text) {
   const r = parseJSON(text); if (!r) return null;
   const e = r.exec && typeof r.exec === 'object' ? r.exec : {}, s = r.sections && typeof r.sections === 'object' ? r.sections : {};
@@ -65,7 +78,7 @@ export function draftMessages(input) {
     consultant_answers_to_challenges: str(i.answers, 6000),
     source_document: str(i.documentText, MAX_TEXT),
   };
-  return [{ role: 'system', content: SHEET_POLICY }, { role: 'user', content: scrub(JSON.stringify(material), names) }];
+  return [{ role: 'system', content: SHEET_POLICY }, { role: 'user', content: JSON.stringify(scrubData(material, names)) }];
 }
 
 export function parseVisuals(text, count) {
