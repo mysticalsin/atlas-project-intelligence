@@ -90,10 +90,15 @@ export function demoIdentityConfigured(env = {}) {
   return switchConfigured(env.ATLAS_DEV_IDENTITY);
 }
 
+// The audit key treats any letter case of this word as production. A surrounding space does not.
+function productionDataMode(env) {
+  return String(env.DATA_MODE || '').toLowerCase() === 'production';
+}
+
 // local-synthetic skips tenant equality. That is the local demo only.
 // DATA_MODE=production with that switch, with demo identity, or with ATLAS_LOCAL_TENANT, is a refused deployment.
 export function productionDemoConflict(env = {}) {
-  if (env.DATA_MODE !== 'production') return null;
+  if (!productionDataMode(env)) return null;
   const reasons = [];
   if (env.ATLAS_TENANT_ISOLATION === 'local-synthetic') reasons.push('ATLAS_TENANT_ISOLATION=local-synthetic');
   if (demoIdentityConfigured(env)) reasons.push('ATLAS_DEV_IDENTITY');
