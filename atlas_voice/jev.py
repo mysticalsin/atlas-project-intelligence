@@ -8,6 +8,15 @@ from datetime import date
 import aiohttp
 
 RUBRIC_VERSION='customer-value-v1'
+REFUSED_RANK_KEYS=('participants','participant','consultants','consultant','owner','subject_key','subject_keys','memory','private_memory','bank','hindsight','rank','ranking','score','customer_claim','consultant_ranking')
+
+def refuse_non_stories(stories):
+    """JEV ranks stories. A consultant set, a rank, or private memory is not an input."""
+    if isinstance(stories,(str,bytes)) or not isinstance(stories,(list,tuple)):
+        raise ValueError('JEV ranks stories, never consultants. Private memory is not evidence.')
+    for story in stories:
+        if not isinstance(story,dict) or any(key in story for key in REFUSED_RANK_KEYS):
+            raise ValueError('JEV ranks stories, never consultants. Private memory is not evidence.')
 DIMENSIONS={
  'problem_fit':('Does the story address this customer problem and business stakes?',.30),
  'transferability':('Are delivery stage, constraints and prerequisites comparable to this customer?',.25),
@@ -92,6 +101,7 @@ class JevRanker:
         self.session=session;self.key=key if key is not None else os.getenv('TYPESAFE_API_KEY','')
         self.model=model or os.getenv('JEV_MODEL','jev-1.13.0')
     async def rank(self,stories,customer,authorize=None):
+        refuse_non_stories(stories)
         if not self.key:raise ValueError('JEV is not configured. No ranking was inferred.')
         if not isinstance(customer,dict) or any(not str(customer.get(k,'')).strip() for k in ('problem','buyer','constraints','desired_outcome')):
             raise ValueError('Supply problem, buyer, constraints and desired outcome before ranking')
@@ -103,6 +113,7 @@ class JevRanker:
                 checked=authorize(story)
                 if not checked:continue
                 story=checked
+            refuse_non_stories([story])
             # Caller must pre-filter ACL, source freshness and exact audience approvals.
             if story.get('eligible') is not True:raise ValueError('Ineligible story cannot be sent to JEV')
             # Only the reviewed narrative and source metadata, not registry ACLs or unrelated drafts.
