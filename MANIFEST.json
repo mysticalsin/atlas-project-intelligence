@@ -752,8 +752,8 @@
     },
     {
       "path": "atlas_voice/identity.py",
-      "bytes": 4781,
-      "sha256": "505257ca223dc362d860b66180ca6e008ce3b8b418a0870a33a839f34bf6c498"
+      "bytes": 5369,
+      "sha256": "e1a670047345e5c59f0a05a0cce216770f119c2e7920ed574a76f1d775460795"
     },
     {
       "path": "atlas_voice/interview.py",
@@ -3344,6 +3344,11 @@
       "path": "tests/test_analyst.py",
       "bytes": 6193,
       "sha256": "2f11d708d41cec75ca251c43752d521d9da2bc323bab4a28f2ec66260ee76c6d"
+    },
+    {
+      "path": "tests/test_audience_uuid_case.py",
+      "bytes": 1693,
+      "sha256": "f6fae9bdae558cf543f041c48c0c02e2f7359fe1851e61ff769df0ade930c496"
     },
     {
       "path": "tests/test_bakeoff.py",

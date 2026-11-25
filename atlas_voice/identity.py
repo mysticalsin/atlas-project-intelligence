@@ -12,6 +12,25 @@ from aiohttp import web
 
 COOKIE = 'atlas_voice_session'
 
+
+def _uuid_text(value):
+    """Canonical UUID text, or None when value is not a UUID string."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _same_audience(heard, configured):
+    """True for one client id. UUID spelling and case do not make a second audience."""
+    if isinstance(heard, str) and heard == configured:
+        return True
+    left, right = _uuid_text(heard), _uuid_text(configured)
+    return left is not None and left == right
+
+
 @dataclass
 class Session:
     tid: str
@@ -70,7 +89,7 @@ class Identity:
             raise ValueError('Missing identity claims.')
         tid = str(uuid.UUID(claims.get('tid', '')))
         oid = str(uuid.UUID(claims.get('oid', '')))
-        if tid.lower() != self.config.tenant.lower() or claims.get('aud') != self.config.client_id:
+        if tid.lower() != self.config.tenant.lower() or not _same_audience(claims.get('aud'), self.config.client_id):
             raise ValueError('Wrong tenant or audience.')
         if not isinstance(claims.get('roles'), list) or claims.get('exp', 0) <= time.time() or self.config.required_role not in claims.get('roles', []):
             raise ValueError('Expired identity or missing application role.')
