@@ -757,8 +757,8 @@
     },
     {
       "path": "atlas_voice/interview.py",
-      "bytes": 6317,
-      "sha256": "06f21fc0e890b58e2a7d24d74998835138ddf1303603ad30d694609848b70553"
+      "bytes": 6371,
+      "sha256": "261362e8365e739bd2ae2a680337966c9564272233d5e6940b1cf4eec672c1ce"
     },
     {
       "path": "atlas_voice/jev.py",
@@ -797,8 +797,8 @@
     },
     {
       "path": "atlas_voice/quality.py",
-      "bytes": 19089,
-      "sha256": "7bf6cbaaa9bb51c87d28b672692b6fa9c4b8b83b08144686836c177a9992728a"
+      "bytes": 19642,
+      "sha256": "9e2307eacaa639750ccb7779ec956dc131814eadc55001f314ab76134e72e888"
     },
     {
       "path": "atlas_voice/realtime.py",
@@ -1057,8 +1057,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/ledger.js",
-      "bytes": 13722,
-      "sha256": "92d8e9b3f3214b6fed65d0b8e9703c1c832eba5f7eba05fc71eb5fda812e37f1"
+      "bytes": 14307,
+      "sha256": "5709b45eb1c3843d5a961d7f3f5fd6ff8daaa866d845abb39c9a79f52c4aa43b"
     },
     {
       "path": "deploy/cloudflare-edge/src/library-routes.js",
@@ -1502,8 +1502,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/parity.test.js",
-      "bytes": 1079,
-      "sha256": "c3a62840d3fe39c5341e3697bddb72e331c4528c626c0676c86042c83d66b107"
+      "bytes": 2095,
+      "sha256": "ce6dbb1fa4b9c0f996a7c0821b710cba7d72bebe41bc816290851a870abf97fc"
     },
     {
       "path": "deploy/cloudflare-edge/test/parity.vectors.json",
@@ -3422,8 +3422,8 @@
     },
     {
       "path": "tests/test_quality.py",
-      "bytes": 13649,
-      "sha256": "70927eb18bc0af7133b08237160473a2f2c5b61412285d86e095259cc4365e7d"
+      "bytes": 14338,
+      "sha256": "32c3cc74312f1ef7b6a9b5d4e5965ebbabd0ee75382cda19092edb01b2ff7c04"
     },
     {
       "path": "tests/test_realtime.py",
@@ -3462,8 +3462,8 @@
     },
     {
       "path": "tests/test_voice.py",
-      "bytes": 12927,
-      "sha256": "c300ce099fe40a917ac8be998193eabc71b4d3b3d3e25a7b72e3f805acb7e8aa"
+      "bytes": 13322,
+      "sha256": "da9c762864846efb7dd2e72ef0c7e27aec99b28556782c19ec24fcdcdfe8585a"
     },
     {
       "path": "tests/trust_browser.py",
