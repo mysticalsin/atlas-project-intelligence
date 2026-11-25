@@ -40,6 +40,26 @@ test('project document: complete, labelled self-reported, client details scrubbe
   assert.equal(scrub('ab', { name: 'ab' }), 'ab', 'names under three characters are not scrubbed (too ambiguous)');
 });
 
+test('project document: a string where a list belongs stays one value', () => {
+  const bad = { ...P, details: { ...P.details, technologies: 'Python', deliverables: 'A dashboard' },
+    answers: ['', 12, 'I rebuilt the queue.'],
+    report: { ...P.report, gaps: 'No named source', follow_ups: 'Who owns the dashboard?' } };
+  const d = projectDocument(bad);
+  assert.match(d, /technologies: Python/);
+  assert.match(d, /deliverables: A dashboard/);
+  assert.doesNotMatch(d, /technologies: P, y, t/);
+  assert.match(d, /Approach: I rebuilt the queue\./);
+  assert.doesNotMatch(d, /Context: I rebuilt the queue/);
+  assert.match(d, /Still missing or unverified: No named source/);
+  assert.match(d, /Open follow-up questions: Who owns the dashboard\?/);
+  const items = retainItems(bad, '2026-09-27T10:00:00.000Z');
+  assert.equal(items[0].document_id, 'project-p-123');
+  const prose = projectDocument({ ...P, answers: 'I rebuilt the queue.', report: 'not a report object' });
+  assert.match(prose, /Context: I rebuilt the queue\./);
+  assert.doesNotMatch(prose, /ATLAS report headline/);
+  assert.match(prose, /Claims triage alias/);
+});
+
 test('Hindsight client: verified endpoints, Bearer key, bank configured once, async retain, tag-scoped recall', async () => {
   const { calls, fetcher } = fakeHS({ recall: { results: [{ text: 'Baseline was not measured yet.', tags: ['atlas', 'project:p-123'], mentioned_at: '2026-09-01' }, { text: '' }] } });
   const hs = hindsight(ENV, fetcher);
@@ -87,6 +107,15 @@ test('memory routes: remember, list, forget one or all, switch off; bank header 
   assert.deepEqual([t.hindsight.ok, t.jev.ok], [true, true]);
   const none = await (await memoryRoutes(req('GET', '/api/memory'), { storage: store(), hs: null, env: {} })).json();
   assert.equal(none.enabled, false);
+  const stringLists = { ...P, details: { ...P.details, technologies: 'Python', deliverables: 'A dashboard' }, report: { ...P.report, gaps: 'No named source' } };
+  const fresh = fakeHS();
+  const open = { storage: store(), hs: hindsight(ENV, fresh.fetcher), env: ENV, fetcher: fresh.fetcher };
+  const remembered = await memoryRoutes(req('POST', '/api/memory/remember', stringLists), open);
+  assert.equal(remembered.status, 200);
+  assert.equal((await remembered.json()).stored, true);
+  const kept = fresh.calls.find(c => String(c.url).endsWith('/memories'));
+  assert.match(kept.body.items[0].content, /technologies: Python/);
+  assert.doesNotMatch(kept.body.items[0].content, /P, y/);
 });
 
 test('session: recalled memory reaches the talker as a private note on every turn; a failing recall never blocks the interview', async () => {

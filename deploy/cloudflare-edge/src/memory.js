@@ -31,6 +31,9 @@ export async function bankId(env, sub, tenant = '') {
 }
 
 const str = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
+// A model or client sometimes sends one string where the interview stores a list. Keep that
+// string as one item. Calling join or map on it throws, and spreading it would keep each letter.
+const textList = (v, n) => (Array.isArray(v) ? v : typeof v === 'string' ? [v] : []).map(x => str(x, n)).filter(Boolean);
 const safeId = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
 
 // Replace every recorded client detail (name, location, contact) wherever it appears.
@@ -46,14 +49,17 @@ export function projectDocument(p) {
   const d = p.details || {}, r = p.report, labels = ['Context', 'Personal contribution', 'Approach', 'Outcome', 'Evidence', 'Relevance for other clients'];
   const lines = [`Project "${str(p.title, 140)}" (${str(p.stage, 40) || 'stage not stated'}${p.sector ? ', ' + str(p.sector, 80) : ''}). Self-reported by the consultant in ATLAS interviews; not verified.`];
   if (p.consultant?.role) lines.push('Consultant role: ' + str(p.consultant.role, 100) + '.');
+  const technologies = textList(d.technologies, 300), deliverables = textList(d.deliverables, 300);
   const facts = [d.projectId && 'project ID ' + d.projectId, d.country, d.start || d.end ? `${d.start || '?'} to ${d.end || 'ongoing'}` : d.duration, d.teamSize && `team of ${d.teamSize}`,
-    (d.technologies || []).length && 'technologies: ' + d.technologies.join(', '), (d.deliverables || []).length && 'deliverables: ' + d.deliverables.join('; ')].filter(Boolean);
+    technologies.length && 'technologies: ' + technologies.join(', '), deliverables.length && 'deliverables: ' + deliverables.join('; ')].filter(Boolean);
   if (facts.length) lines.push('Details: ' + facts.map(x => str(String(x), 300)).join('; ') + '.');
-  (p.answers || []).forEach((a, i) => { if (a && a.trim()) lines.push(`${labels[i]}: ${str(a, 1500)}`); });
-  if (r) {
+  const answers = Array.isArray(p.answers) ? p.answers : typeof p.answers === 'string' ? [p.answers] : [];
+  answers.forEach((a, i) => { const text = str(a, 1500); if (text) lines.push(`${labels[i]}: ${text}`); });
+  if (r && typeof r === 'object' && !Array.isArray(r)) {
     lines.push('ATLAS report headline: ' + str(r.headline, 160) + '. Summary: ' + str(r.summary, 900));
-    if ((r.gaps || []).length) lines.push('Still missing or unverified: ' + r.gaps.map(g => str(g, 200)).join('; ') + '.');
-    if ((r.follow_ups || []).length) lines.push('Open follow-up questions: ' + r.follow_ups.map(g => str(g, 200)).join('; ') + '.');
+    const gaps = textList(r.gaps, 200), follow = textList(r.follow_ups, 200);
+    if (gaps.length) lines.push('Still missing or unverified: ' + gaps.join('; ') + '.');
+    if (follow.length) lines.push('Open follow-up questions: ' + follow.join('; ') + '.');
   }
   return scrub(lines.join('\n'), p.client).slice(0, 12000);
 }
