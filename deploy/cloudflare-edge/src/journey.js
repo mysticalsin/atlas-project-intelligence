@@ -48,6 +48,7 @@ const SOURCES = new Set(['you', 'directory', 'staffing', 'document', 'interview'
 
 export function ensureJourney(lib) {
   lib.schema(() => ensureJourneySchema(lib));
+  foldJourneyIndex(lib);
 }
 function ensureJourneySchema(lib) {
   const exists = lib.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'journey'")[0];
@@ -81,16 +82,36 @@ function ensureJourneySchema(lib) {
 
 // The case-sensitive primary key can already hold more than one spelling of the same email.
 // Read and save share one choice: the newest updated_at, then the greatest rowid.
-// Export and erasure take every row this match finds. Nothing here merges the duplicates.
-export const JOURNEY_MATCH = 'lower(subject) = lower(?) AND tenant = ?';
+// Export and erasure take every row this match finds. Nothing here merges email spellings.
+// A tenant id is one UUID: stored case is not a second tenant. NULL stays NULL and does not match ''.
+export const JOURNEY_MATCH = 'lower(subject) = lower(?) AND lower(tenant) = lower(?)';
 export const JOURNEY_READ_SQL = `SELECT rowid AS id, subject, tenant, payload, updated_at FROM journey WHERE ${JOURNEY_MATCH} ORDER BY updated_at DESC, rowid DESC LIMIT 1`;
 export const JOURNEY_ALL_SQL = `SELECT rowid AS id, subject, tenant, payload, updated_at FROM journey WHERE ${JOURNEY_MATCH} ORDER BY updated_at DESC, rowid DESC`;
 export const JOURNEY_COUNT_SQL = `SELECT COUNT(*) AS n FROM journey WHERE ${JOURNEY_MATCH}`;
 export const JOURNEY_DELETE_SQL = `DELETE FROM journey WHERE ${JOURNEY_MATCH}`;
 export const JOURNEY_UPDATE_SQL = 'UPDATE journey SET payload = ?, updated_at = ? WHERE rowid = ?';
 
+function journeyIndexFolds(sql) {
+  const text = String(sql || '').toLowerCase();
+  return text.includes('lower(tenant)') && text.includes('lower(subject)');
+}
+
 function ensureJourneyIndex(lib) {
-  lib.exec('CREATE INDEX IF NOT EXISTS journey_tenant_subject ON journey(tenant, lower(subject))');
+  const row = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'journey_tenant_subject'")[0];
+  if (journeyIndexFolds(row && row.sql)) return;
+  if (!row) lib.exec('CREATE INDEX IF NOT EXISTS journey_tenant_subject ON journey(lower(tenant), lower(subject))');
+}
+
+// Schema can create the index and cannot drop the old one. An existing column index
+// is replaced here, after schema returns, so lower(tenant) stays a search.
+function foldJourneyIndex(lib) {
+  const row = lib.rows("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'journey_tenant_subject'")[0];
+  if (!row || journeyIndexFolds(row.sql)) return;
+  lib.recorded(() => {
+    lib.exec('DROP INDEX journey_tenant_subject');
+    lib.exec('CREATE INDEX journey_tenant_subject ON journey(lower(tenant), lower(subject))');
+    lib.log('schema', 'atlas', 'schema migration', 'journey index');
+  });
 }
 
 export function journeyTenant(user = {}) {
