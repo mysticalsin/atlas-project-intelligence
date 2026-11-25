@@ -712,8 +712,8 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32311,
-      "sha256": "50966c625b8efa6cd745e96eb9e4dfd5ddce3d622b34d8fb9859c947f72e0752"
+      "bytes": 33008,
+      "sha256": "1b1e5a262e1afaa09f5e252a5c5b1d82a2e68396be3176d7e138cedcf008fac8"
     },
     {
       "path": "atlas_voice/config.py",
@@ -3429,6 +3429,11 @@
       "path": "tests/test_realtime.py",
       "bytes": 6865,
       "sha256": "fbbed0599df0d3fe84eed756a2b1f5e3de958309a97d6177d1eddfacc4e47052"
+    },
+    {
+      "path": "tests/test_reply_close.py",
+      "bytes": 1340,
+      "sha256": "262a8e0a442357ee05acad0aacd103728257c59efcd7ff799cfdde12e4cec4bb"
     },
     {
       "path": "tests/test_report.py",

@@ -151,6 +151,22 @@ def talker_messages(project, preferences, guidance, history, instruction=None, n
     return messages
 
 
+# A reply that still asks a question is not a closing, whatever end token it carries.
+# ASCII ? is not the only mark. Spanish, Greek, Armenian, Arabic and fullwidth CJK
+# questions use their own marks. Those languages are ones ATLAS already names.
+_QUESTION_MARKS = ('?', '\u00bf', '\u037e', '\u055e', '\u061f', '\uff1f')
+
+
+def asks_question(text):
+    sample = '' if text is None else str(text)
+    return any(mark in sample for mark in _QUESTION_MARKS)
+
+
+def reply_closes(instruction, said, *, admin=False, end_seen=False):
+    """True when this reply should end the interview. Time being up still ends it."""
+    return instruction == TIME_UP or (end_seen and (admin or not asks_question(said)))
+
+
 async def run(request, config, identity, memory, http, gate, active):
     subject = identity.require(request)
     if request.headers.get('Origin') != config.origin:
@@ -214,7 +230,7 @@ async def run(request, config, identity, memory, http, gate, active):
             await stt.speak(deltas(), emit)
             interrupted = False
             # A reply that still asks a question is not a closing, whatever token it carries (admin may end at will).
-            closes = instruction == TIME_UP or (marker.seen and (admin or '?' not in ''.join(said)))
+            closes = reply_closes(instruction, ''.join(said), admin=admin, end_seen=marker.seen)
             if closes and state['turns'] >= 1:
                 side_task(wrap_up(state['turns']))
         finally:
