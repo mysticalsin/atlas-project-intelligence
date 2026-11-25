@@ -161,23 +161,33 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
     async def preference(request):
         subject = identity.require(request)
+        try:
+            data = await request.json()
+            if not isinstance(data, dict) or set(data) != {'preference'}:
+                raise ValueError('Only a preference is accepted; the server selects the user bank.')
+        except ValueError as e:
+            raise web.HTTPBadRequest(text=str(e)) from None
         now = time.monotonic()
         if now - preference_times.get(subject.subject_key, -100) < 10:
             raise web.HTTPTooManyRequests(text='Wait a few seconds before saving another preference.')
         preference_times[subject.subject_key] = now
         if len(preference_times) > 1000:
-            for key in [k for k,v in preference_times.items() if now-v>60]:
+            for key in [k for k, v in preference_times.items() if now - v > 60]:
                 preference_times.pop(key, None)
+
+        def release():
+            if preference_times.get(subject.subject_key) == now:
+                preference_times.pop(subject.subject_key, None)
+
         try:
-            data = await request.json()
-            if set(data) != {'preference'}:
-                raise ValueError('Only a preference is accepted; the server selects the user bank.')
             await memory.retain(subject, data['preference'])
-            return web.json_response({'saved': True})
         except ValueError as e:
+            release()
             raise web.HTTPBadRequest(text=str(e)) from None
         except Exception:
+            release()
             raise web.HTTPBadGateway(text='Hindsight did not confirm this write. No success is assumed.') from None
+        return web.json_response({'saved': True})
 
     async def logout(request):
         key = request.cookies.get(COOKIE, '')
