@@ -267,7 +267,15 @@ export function idpClaims(header) {
 export function emailGuess(address) {
   const local = (validEmail(address).split('@')[0] || '').split('+')[0];
   const parts = local.split(/[._-]+/).map(p => p.replace(/[^\p{L}\p{M}']/gu, '')).filter(Boolean);
-  const cap = p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+  // A letter after an apostrophe is capitalised too: o'brien is O'Brien.
+  const cap = p => {
+    let out = '', upper = true;
+    for (const ch of p) {
+      if (upper && /\p{L}/u.test(ch)) { out += ch.toUpperCase(); upper = false; }
+      else { out += ch.toLowerCase(); upper = ch === "'"; }
+    }
+    return out;
+  };
   const name = str(parts.map(p => p.length === 1 ? cap(p) + '.' : cap(p)).join(' '), 100);
   return parts.length >= 2 && parts[0].length >= 2 ? { name, givenName: str(cap(parts[0]), 40) } : { name };
 }
