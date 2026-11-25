@@ -96,7 +96,13 @@ Output exactly one JSON object, starting with { and ending with }, with keys:
 title (string, at most 12 words), subtitle (string, at most 16 words), summary (2 or 3 sentences),
 sections: array of 3 or 4 objects {heading (string: e.g. "The challenge", "What we did", "Results", "Why it matters for you"), bullets: array of at most 4 objects {text (at most 25 words), kind ("fact" or "interpretation"), source (one of context, contribution, approach, outcome, evidence, customer_relevance, details, target)}}.`;
 const SRC = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance', 'details', 'target'];
-export const numbersIn = t => (String(t).match(/\d+(?:[.,]\d+)?/g) || []).map(n => n.replace(',', '.'));
+// A comma group of three digits is that many (1,000 and 1000). A shorter comma fraction stays a
+// decimal (12,5 and 12.5). A dot group is left as written, so 1.000 is not read as 1000.
+const NUMBER = /\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{1,3}(?:\.\d{3})+,\d+|\d+(?:[.,]\d+)?/g;
+const figure = n => /^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(n) ? n.replace(/,/g, '')
+  : /^\d{1,3}(?:\.\d{3})+,\d+$/.test(n) ? n.replace(/\./g, '').replace(',', '.')
+  : n.includes(',') ? n.replace(',', '.') : n;
+export const numbersIn = t => (String(t).match(NUMBER) || []).map(figure);
 // Bullets with a number that does not appear in the reference are removed and reported.
 export function parseSlides(text, sourceText) {
   const r = parseJSON(text); if (!r) return null;

@@ -1152,8 +1152,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/reuse.js",
-      "bytes": 11449,
-      "sha256": "f8f410a1a25be1d0a4d7611e49e60df17a130f408bc827c15686970d8bfbc8d2"
+      "bytes": 11905,
+      "sha256": "4803a6bc6c691483dd7c08d35d9e4346cab3e8853cbdafd1fb11aa630479143e"
     },
     {
       "path": "deploy/cloudflare-edge/src/review.js",
@@ -1474,6 +1474,11 @@
       "path": "deploy/cloudflare-edge/test/memory.test.js",
       "bytes": 13401,
       "sha256": "2a87551ca65ce218ff91f56658a334a0cbf6e3a624ec5a6f692fadd640e2cdc1"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/number-grouping.test.js",
+      "bytes": 1954,
+      "sha256": "7bf6cffdc2ac61c5272d57ee3301da30d2a6f3fb15e2e7910168c30269695366"
     },
     {
       "path": "deploy/cloudflare-edge/test/outreach.test.js",
