@@ -16,8 +16,9 @@ function entries(buf){const b=buf instanceof Uint8Array?buf:new Uint8Array(buf),
   o+=46+nl+xl+cl;}
  return out;}
 const unxml=s=>s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+// A run that keeps a leading or trailing space is <a:t xml:space="preserve">, not a bare <a:t>.
 async function pptxText(buf){const z=entries(buf),slides=[...z.keys()].filter(k=>/^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a,b)=>+a.match(/\d+/)[0]-+b.match(/\d+/)[0]);
- const out=[];for(const [i,k] of slides.entries()){const xml=new TextDecoder().decode(await z.get(k)());const paras=xml.split(/<\/a:p>/).map(p=>[...p.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(m=>unxml(m[1])).join('')).filter(t=>t.trim());
+ const out=[];for(const [i,k] of slides.entries()){const xml=new TextDecoder().decode(await z.get(k)());const paras=xml.split(/<\/a:p>/).map(p=>[...p.matchAll(/<a:t\b[^>]*>([^<]*)<\/a:t>/g)].map(m=>unxml(m[1])).join('')).filter(t=>t.trim());
   if(paras.length)out.push(`Slide ${i+1}\n`+paras.join('\n'));}
  return out.join('\n\n');}
 // Embedded PNG/JPEG media, largest first, small icons skipped.

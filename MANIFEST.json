@@ -2862,8 +2862,8 @@
     },
     {
       "path": "src/office.js",
-      "bytes": 2845,
-      "sha256": "09a4ddec4fcec761dc8e2bbf0231abe29b133d0420f3a0acc07902473ce7caf7"
+      "bytes": 2949,
+      "sha256": "24fc1e27518436801e4457cd3e053cfd409029b743d3ece4f7509583a979ea79"
     },
     {
       "path": "src/orb-renderer.js",
@@ -3179,6 +3179,11 @@
       "path": "tests/mock_personaplex.py",
       "bytes": 2118,
       "sha256": "3d37dc6a8d64d1fe319beab24e92d59927d7297254d6e578e201b597934773e6"
+    },
+    {
+      "path": "tests/office-text-run.test.js",
+      "bytes": 1161,
+      "sha256": "a9c8ba6a304569b48aff0bdb28dce919c2178c0aebee39dd155d0f06a2e259e3"
     },
     {
       "path": "tests/office.test.js",
