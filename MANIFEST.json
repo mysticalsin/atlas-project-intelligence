@@ -1212,8 +1212,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/subject-rights.js",
-      "bytes": 29510,
-      "sha256": "855d2d781c72ced7c89918cc9df066fefbad9991e817842b7f3dbff87ff9f113"
+      "bytes": 30157,
+      "sha256": "dc2a72f7479565188fda37c956a4d8edbf5141ae85de095b8501ebeba6a3e168"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
@@ -1354,6 +1354,11 @@
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
       "bytes": 3941,
       "sha256": "319154b32e1944851b6d165082b5421dae3570c5f6ec5caf91e3df055b2bfe9f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/export-sent-invitations.test.js",
+      "bytes": 3716,
+      "sha256": "e488a127ba85166c5afd66b4ebe197d369b3c705185260087c70d23909fc2ee6"
     },
     {
       "path": "deploy/cloudflare-edge/test/features.test.js",

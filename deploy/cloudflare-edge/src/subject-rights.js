@@ -195,13 +195,22 @@ export function exportMine(lib, user, subj) {
   // evidence_records, evidence_claims and approvals are not created by this slice. They are not read here.
   const evidence = [], approvalsByMe = [];
   const prof = hasTenantColumn(lib, 'profiles') ? lib.rows('SELECT edits, signin, consents, created_at, updated_at, seen_at FROM profiles WHERE subject = ? AND ' + TENANT_SQL, email, tenant)[0] : null;
+  // Received rows store this person in email. Sent rows store this person in source.
+  // Both sign-in aliases count, in lowercase. A 60-character prefix is not a sender:
+  // it can belong to more than one person, so it is not copied. The tenant test is the
+  // same one the rest of this export uses. A blank tenant stays out.
+  const invitationAliases = subjectAddresses(user);
+  const invitationMarks = invitationAliases.length ? placeholders(invitationAliases.length) : '';
+  const invitations = hasTenantColumn(lib, 'invitations') && invitationAliases.length
+    ? q(`SELECT id, email, project_id AS projectId, title, reason, slot, status, created_at AS createdAt, source FROM invitations WHERE ${TENANT_SQL} AND (lower(email) IN (${invitationMarks}) OR lower(source) IN (${invitationMarks})) ORDER BY created_at`, tenant, ...invitationAliases, ...invitationAliases)
+    : [];
   const out = {
     schema: 'atlas.subject-export.v1', exportedAt: at, subject: email,
     note: 'Machine-readable copy of what this verified tenant holds about you in the shared library. Other tenants are not included. This is not a certification of GDPR compliance; wording and lawful bases still need the DPO. Audit rows list ids and actions only.',
     profile: prof ? { edits: parse(prof.edits, {}), signin: parse(prof.signin, {}), consents: parse(prof.consents, {}), createdAt: prof.created_at, updatedAt: prof.updated_at, seenAt: prof.seen_at } : null,
     references: refs, revisions, listedOn, namedAsN1On: n1Of, validatedByMeOn: validatedByMe, evidence, approvalsMade: approvalsByMe,
     consentReceipts: privacy.receiptsOf(lib, subj), privacyFlags: privacy.flagsOf(lib, email),
-    invitations: hasTenantColumn(lib, 'invitations') ? q('SELECT id, project_id AS projectId, title, reason, slot, status, created_at AS createdAt, source FROM invitations WHERE email = ? AND ' + TENANT_SQL + ' ORDER BY created_at', email, tenant) : [],
+    invitations,
     outreach: hasTenantColumn(lib, 'outreach') ? q('SELECT id, kind, channel, status, reason, payload, created_at AS createdAt, sent_at AS sentAt FROM outreach WHERE ' + TENANT_SQL + ' AND to_email = ? ORDER BY created_at', tenant, email).map(r => ({ ...r, payload: parse(r.payload, r.payload) })) : [],
     staffing: scoped('staffing', 'tenant', ['consultant_email'], 'lower(consultant_email) = ?', 'project_id AS projectId, project_title AS projectTitle, end_date AS endDate, source, updated_at AS updatedAt', '', email),
     gapRequests: hasTenantColumn(lib, 'gap_requests') ? q('SELECT id, status, created_at AS createdAt, answered_at AS answeredAt, results FROM gap_requests WHERE ' + whereSubject('tenant', 'lower(email) = ?') + ' ORDER BY created_at', tenant, email).map(r => ({ ...r, results: parse(r.results, null) })) : [],
