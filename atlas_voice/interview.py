@@ -2,6 +2,7 @@
 import json
 import re
 from urllib.parse import urlencode
+from .quality import verbatim_excerpt
 
 TOPICS = ('Context', 'Contribution', 'Approach', 'Outcome', 'Evidence', 'Customer relevance')
 
@@ -76,7 +77,7 @@ def validate_notes(raw, transcript):
             if not isinstance(excerpt, str):
                 raise ValueError('An excerpt must be text.')
             excerpt = ' '.join(excerpt.split())
-            if len(excerpt) < 5 or len(excerpt) > 3000 or excerpt not in normalized:
+            if len(excerpt) < 5 or len(excerpt) > 3000 or not verbatim_excerpt(excerpt, normalized):
                 raise ValueError('A proposed note is not a verbatim consultant transcript excerpt.')
             if excerpt not in valid:
                 valid.append(excerpt)

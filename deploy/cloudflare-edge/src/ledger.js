@@ -8,6 +8,22 @@ const NUMERIC = new RegExp(NUMERIC_SRC, 'i');
 const UNCERTAIN = new RegExp(UNCERTAIN_SRC, 'i');
 const UNKNOWN = new RegExp(UNKNOWN_SRC, 'i');
 const ws = s => s.split(/\s+/).filter(Boolean).join(' ');
+const alnum = ch => /[\p{L}\p{N}]/u.test(ch);
+// Same rule as atlas_voice/quality.py verbatim_excerpt: a quote must be its own span.
+function verbatimExcerpt(quote, source) {
+  if (!quote || !source) return false;
+  let start = 0;
+  while (start <= source.length) {
+    const i = source.indexOf(quote, start);
+    if (i < 0) return false;
+    const before = i === 0 || !alnum(source[i - 1]);
+    const end = i + quote.length;
+    const after = end === source.length || !alnum(source[end]);
+    if (before && after) return true;
+    start = i + 1;
+  }
+  return false;
+}
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const fail = m => { throw new Error(m); };
 const stable = v => Array.isArray(v) ? '[' + v.map(stable).join(',') + ']' : isObj(v) ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v);
@@ -37,7 +53,7 @@ export class InterviewLedger {
       const f = x.field, ident = x.item_id, q = x.quote;
       if (!FIELD_KEYS.includes(f) || !this.transcripts.has(ident) || typeof q !== 'string' || q.length < 5 || q.length > 1800) fail('Invalid field, transcript reference or quote length');
       const quote = ws(q), source = ws(this.transcripts.get(ident));
-      if (!source.includes(quote)) fail('Quote is not in the consultant transcript');
+      if (!verbatimExcerpt(quote, source)) fail('Quote is not in the consultant transcript');
       const supersedes = x.supersedes || '';
       if (supersedes && !this.details.some(d => d.id === supersedes && d.field === f && d.active)) fail('Correction must reference an active same-field candidate');
       if ([...this.details, ...pending].some(d => d.field === f && d.item_id === ident && d.quote === quote && d.active)) continue;
@@ -134,7 +150,7 @@ export class InterviewLedger {
 
   notes() {
     const sections = ['', '', '', '', '', ''];
-    for (const x of this.details) if (x.active) { const i = TO_TOPIC[x.field]; if (!sections[i].includes(x.quote)) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
+    for (const x of this.details) if (x.active) { const i = TO_TOPIC[x.field]; if (!verbatimExcerpt(x.quote, sections[i])) sections[i] = (sections[i] + '\n' + x.quote).trim().slice(0, 6000); }
     return sections;
   }
 }
