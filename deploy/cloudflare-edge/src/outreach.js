@@ -91,6 +91,18 @@ export function ensure(lib) {
 const parsed = t => { try { return obj(JSON.parse(t)); } catch { return {}; } };
 const addDays = (day, n) => new Date(Date.parse(day + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const isoDate = v => { const s = String(v ?? '').trim(); return /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s + 'T00:00:00Z')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s ? s : ''; };
+// A matching digit pattern is not a calendar day. 31 February and 24:00 are not a meeting.
+function slotStamp(slot) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(slot || ''));
+  if (!m) return '';
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]), hour = Number(m[4]), minute = Number(m[5]);
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59) return '';
+  const probe = new Date(0);
+  probe.setUTCFullYear(year, month - 1, day);
+  probe.setUTCHours(0, 0, 0, 0);
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return '';
+  return m[1] + m[2] + m[3] + 'T' + m[4] + m[5] + '00';
+}
 const originOf = ctx => { for (const v of [ctx.env?.ORIGIN, ctx.url?.href]) { try { const o = new URL(String(v)).origin; if (/^https?:\/\//.test(o)) return o; } catch { /* next */ } } return ''; };
 
 function view(o) {
@@ -406,12 +418,11 @@ function emailDraft(lib, o, origin) {
     : o.kind === 'interview_invite' ? `A short ATLAS interview about ${pv.title || 'your recent project'} is ready (about 12 minutes).\n\nStart it here: ${link}`
       : `${pv.text || 'A bid team asks for 5 minutes of proof.'}\n\nOpen it here: ${link}`;
   const draft = { to: o.to_email, subject, body };
-  const slot = o.kind === 'interview_invite' ? String(lib.rows('SELECT slot FROM invitations WHERE id = ?', o.subject_id)[0]?.slot || '') : '';
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(slot);
-  if (m) {
+  const start = o.kind === 'interview_invite' ? slotStamp(lib.rows('SELECT slot FROM invitations WHERE id = ?', o.subject_id)[0]?.slot) : '';
+  if (start) {
     const stamp = lib.now().replace(/[-:]/g, '').replace(/\.\d+/, '').slice(0, 15) + 'Z';
     draft.ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ATLAS//Interview//EN', 'BEGIN:VEVENT', `UID:${o.id}@atlas`, `DTSTAMP:${stamp}`,
-      `DTSTART:${m[1]}${m[2]}${m[3]}T${m[4]}${m[5]}00`, 'DURATION:PT15M', `SUMMARY:${ics(subject)}`, `DESCRIPTION:${ics(link)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+      `DTSTART:${start}`, 'DURATION:PT15M', `SUMMARY:${ics(subject)}`, `DESCRIPTION:${ics(link)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
   }
   return draft;
 }
