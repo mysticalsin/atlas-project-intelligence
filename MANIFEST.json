@@ -1007,8 +1007,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/csvsafe.js",
-      "bytes": 677,
-      "sha256": "4c35cd5fea43ff8e6e9aa27537b63b909628f10f9a7431cf05bc67079213f5aa"
+      "bytes": 1109,
+      "sha256": "743396e5cf369b38565ba8c4f254520a723e688515feaa85d6a38de2c699b40e"
     },
     {
       "path": "deploy/cloudflare-edge/src/customer-jev.js",
@@ -1344,6 +1344,11 @@
       "path": "deploy/cloudflare-edge/test/confirm-page.test.js",
       "bytes": 7277,
       "sha256": "d3d75a1a80fbae1c2574cceee9541d3521eda8c66e08642ec21f706affa6b989"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/csv-formula.test.js",
+      "bytes": 1719,
+      "sha256": "9505aef52660eccc165c5dfd6f9b969c1f68e1df70eda5e3464c0a6bc41114e1"
     },
     {
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
