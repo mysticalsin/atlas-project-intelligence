@@ -266,8 +266,8 @@ async function jevAllow(b){const row=b.closest('.jev-consent'),id=b.dataset.jevA
 function jevLater(b){const row=b.closest('.jev-consent');if(row.dataset.jevWhere==='strip')jevDismiss();else jevNotNow=true;row.remove();}
 document.addEventListener('click',e=>{const a=e.target.closest('[data-jev-allow]'),l=e.target.closest('[data-jev-later]');if(a)jevAllow(a);else if(l)jevLater(l);});
 // A rating in progress: poll GET with backoff (0.8, 1.6, 3.2 s, then every 5 s) for at most 45 s, until it lands, the dialog
-// closes or another record opens. The dialog is redrawn only when something it shows changed.
-const recSig=r=>JSON.stringify([r.revision,r.status,r.state?.quality,!!r.rating?.running]),pollLate=id=>recPoll?.id===id&&Date.now()-recPoll.t0>=45000;
+// closes or another record opens. The dialog is redrawn only when something it shows changed, including the project impact.
+const recSig=r=>JSON.stringify([r.revision,r.status,r.state?.quality,!!r.rating?.running,String(r.projectView?.projectImpact?.text||'')]),pollLate=id=>recPoll?.id===id&&Date.now()-recPoll.t0>=45000;
 function stopPoll(){if(recPoll)clearTimeout(recPoll.t);recPoll=null;}
 function pollRecord(r){if(recPoll?.id!==r.id){stopPoll();recPoll={id:r.id,t0:Date.now(),n:0,t:0};}const p=recPoll,live=()=>recPoll===p&&$('recordDialog').open&&window.__record?.id===p.id;clearTimeout(p.t);
  p.t=setTimeout(async()=>{if(!live()){if(recPoll===p)stopPoll();return;}let x=null;try{x=await libraryApi('/'+encodeURIComponent(p.id));}catch{}if(!live())return;
@@ -275,6 +275,10 @@ function pollRecord(r){if(recPoll?.id!==r.id){stopPoll();recPoll={id:r.id,t0:Dat
 async function autoRate(id){let r=null;try{r=await libraryApi('/'+encodeURIComponent(id)+'/review',{method:'POST',body:{}});}catch(e){toast(e.message);}
  if($('recordDialog').open&&window.__record?.id===id)showRecord(r||window.__record);}
 async function openRecord(id){stopPoll();let r;try{r=await libraryApi('/'+encodeURIComponent(id));}catch(e){toast(e.message);return;}await window.AtlasProfile?.ready?.();showRecord(r);}
+// projectView.projectImpact is the effect of the whole project. It is not a consultant scope, a score, or a rank.
+function projectImpactBlock(r){const impact=r.projectView?.projectImpact,text=String(impact?.text||'').trim();if(!text)return '';
+ const rev=Number.isInteger(impact.revision)&&impact.revision>0?'Revision '+impact.revision+'. ':'';
+ return html`<h3>Project impact</h3><p data-project-impact>${text}</p><p class="tiny muted">${rev}The effect of the whole project.</p>`;}
 function showRecord(r){const d=r.data,q=r.state.quality,v=r.state.validation,P=r.permissions,dt=d.details,list=a=>(a||[]).join(', ');
  // Without the key: no polling, no automatic rating and today's text (§0). An automatic rating runs once per revision, only when
  // the server says JEV may rate this story (rating.jevAllowed), so browsing never starts the review agent.
@@ -291,7 +295,7 @@ function showRecord(r){const d=r.data,q=r.state.quality,v=r.state.validation,P=r
  const story=frag(E.TOPICS.map((t,i)=>html`<h4>${t.label}</h4><p>${(d.answers[i])?(d.answers[i]):(html`<span class="muted">Not covered yet</span>`)}</p>`));
  const auditMark=x=>x.legacy?(html` <button type="button" class="audit-note">Legacy</button>`):x.unverified?(html` <button type="button" class="audit-note">Unverified</button>`):('');
  const hist=(r.revisions.length)?(html`<details><summary>Versions and audit trail</summary><h4>Revisions</h4><ul>${frag(r.revisions.map(x=>html`<li>r${x.revision} · ${x.author} · ${fmt(x.at)}</li>`))}</ul><h4>Who did what</h4><ul>${frag(r.audit.map(x=>html`<li>${fmt(x.at)} · ${x.actor} · ${x.action}${x.detail?' · '+x.detail:''}${auditMark(x)}</li>`))}</ul></details>`):('');
- setHTML($('recordBody'),(html`${(q&&window.AtlasCharts)?(trusted(AtlasCharts.qualityGauge(q,{jev:J,admin:!!bootCache?.admin}))):('')}${quality}${duplicatesBlock(r)}${val}<div class="validation-actions">${actions}</div>${(r.status==='published'||r.access==='full')?(slidesForm(r.id,r.access==='full')):('')}<h3>Reference details</h3>${fields}<h3>The story</h3>${story}${(d.report)?(html`<h3>ATLAS summary (model draft)</h3><p><b>${d.report.headline}</b></p><p>${d.report.summary}</p>`):('')}${hist}`||html``));window.AtlasCharts?.bind($('recordBody'));
+ setHTML($('recordBody'),(html`${(q&&window.AtlasCharts)?(trusted(AtlasCharts.qualityGauge(q,{jev:J,admin:!!bootCache?.admin}))):('')}${quality}${duplicatesBlock(r)}${projectImpactBlock(r)}${val}<div class="validation-actions">${actions}</div>${(r.status==='published'||r.access==='full')?(slidesForm(r.id,r.access==='full')):('')}<h3>Reference details</h3>${fields}<h3>The story</h3>${story}${(d.report)?(html`<h3>ATLAS summary (model draft)</h3><p><b>${d.report.headline}</b></p><p>${d.report.summary}</p>`):('')}${hist}`||html``));window.AtlasCharts?.bind($('recordBody'));
  const claims=$('claimsBlock');claims.hidden=true;claims.replaceChildren();window.AtlasWowUI?.renderClaims?.(r); // never a previous record's claims
  if(!$('recordDialog').open)open('recordDialog');
  $('recordDialog').querySelector('[aria-label="Close reference"]')?.focus();
