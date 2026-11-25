@@ -1147,8 +1147,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/retention.js",
-      "bytes": 8804,
-      "sha256": "4c85f31d22356552bf595ca385384e355493d05b3c297fe0da17ba0a1d749e35"
+      "bytes": 9169,
+      "sha256": "b8ac37fa0d5e8aae08cd774835c855198d6b50a3cd022d5b39a871f72cc6cb74"
     },
     {
       "path": "deploy/cloudflare-edge/src/reuse.js",
@@ -1564,6 +1564,11 @@
       "path": "deploy/cloudflare-edge/test/report.vectors.json",
       "bytes": 62615,
       "sha256": "011dff431e3909410e3b33863df48be98589f562402308e6365143d849e942e8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/retention-clock.test.js",
+      "bytes": 2418,
+      "sha256": "b70fbd63a123143a33b6e79d89df82ca3c03aa049bfeea7e009bab72dda8cbf0"
     },
     {
       "path": "deploy/cloudflare-edge/test/reuse.test.js",
