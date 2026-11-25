@@ -1252,9 +1252,12 @@ export class Library {
     const want = [target.searchText, target.industry, target.likelyChallenges.join('. '), target.capabilities.join(', ')].join('\n');
     const qv = this.embed ? await this.embed(want).catch(() => null) : null;
     const wins = winSignals(this, user); // bounded win-history boost (F7): order only, never model relevance, this tenant only
+    // The industry's first word matches a sector only as its own word. Air does not boost repair or airline.
+    const industryWord = target.industry ? target.industry.toLowerCase().split(/\s+/)[0] : '';
+    const industryWordHit = industryWord ? new RegExp('(?<![\\p{L}\\p{N}])' + industryWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}])', 'u') : null;
     const scored = pool.map(([r, level]) => {
       const m = forModel(r.data), sem = qv && r.embedding ? cosine(qv, JSON.parse(r.embedding)) : null, lex = lexical(want, searchText(m));
-      const boost = (target.industry && (r.data.sector || '').toLowerCase().includes(target.industry.toLowerCase().split(/\s+/)[0]) ? 0.05 : 0) + (wins.get(r.id)?.boost || 0);
+      const boost = (industryWordHit && industryWordHit.test((r.data.sector || '').toLowerCase()) ? 0.05 : 0) + (wins.get(r.id)?.boost || 0);
       return { r, level, score: (sem ?? lex) + boost, similarity: sem ?? lex };
     }).sort((a, b) => b.score - a.score).slice(0, 12);
     const cards = scored.map(s => candidateCard(s.r.id, recordView(this, s.r.data)));
