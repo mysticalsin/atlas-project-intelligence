@@ -687,8 +687,8 @@
     },
     {
       "path": "assets/geo/world-110m.json",
-      "bytes": 110856,
-      "sha256": "e733925dbcf6f9735148d2ff135bf18b5f05c588a519c92d035d5f90b65dd843"
+      "bytes": 110957,
+      "sha256": "3e3df2aef7d23f733c6f1734ed549876e53dd1b70b6a8f8bce4419c78de797e8"
     },
     {
       "path": "atlas_voice/__init__.py",
@@ -2682,8 +2682,8 @@
     },
     {
       "path": "scripts/build_world_map.py",
-      "bytes": 19574,
-      "sha256": "672e101911646a50e6d1a150b9f784fde640b63bea9ddd8d8cebcc5c543dff04"
+      "bytes": 19689,
+      "sha256": "785bf58816f414515a3e2d85f596443867f36cd72d7f94d7127a404bda54eefd"
     },
     {
       "path": "scripts/capture_pr10_evidence.py",
@@ -3124,6 +3124,11 @@
       "path": "tests/geo-ne-check.js",
       "bytes": 1125,
       "sha256": "d96bf96fe85f0fe45e6617d91f3d43d86fb6c5842b25df32c81d6ebb9df49e9e"
+    },
+    {
+      "path": "tests/geo-official-the.test.js",
+      "bytes": 1685,
+      "sha256": "ff2e039ed9661f8cf4a87897adb7c1d36dc3e638edba4b46d5fec2fe6fec0820"
     },
     {
       "path": "tests/geo.test.js",
