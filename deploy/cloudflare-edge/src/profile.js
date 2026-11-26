@@ -362,7 +362,12 @@ export function directoryManager(lib, address, tenant = '') {
 // ---- The DNA pull (ASSUMED shape): the signed-in subject only, mapped fields only, never the raw response. ----
 function walk(o, path) { return path.split('.').reduce((v, k) => v && typeof v === 'object' && Object.hasOwn(v, k) ? v[k] : undefined, o); }
 async function boundedText(res, max) {
-  if (Number(res.headers.get('Content-Length') || 0) > max) return null;
+  // A declared length over the cap must stop the download. Returning without
+  // cancel leaves the DNA response body running.
+  if (Number(res.headers.get('Content-Length') || 0) > max) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
   if (!res.body) return '';
   const reader = res.body.getReader(), parts = []; let n = 0;
   for (;;) {
