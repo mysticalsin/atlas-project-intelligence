@@ -832,8 +832,8 @@
     },
     {
       "path": "atlas_voice/wiki_export.py",
-      "bytes": 1801,
-      "sha256": "dd8ef40197840c82ddc0f6c91773f1aa8a3fe7c93570899a61a46a95f5c4923d"
+      "bytes": 1831,
+      "sha256": "ee89b8999c1b7d0c9f1e156c9879686d2269b26b476466407899482801decdd9"
     },
     {
       "path": "build.py",
@@ -3464,6 +3464,11 @@
       "path": "tests/test_voice.py",
       "bytes": 12927,
       "sha256": "c300ce099fe40a917ac8be998193eabc71b4d3b3d3e25a7b72e3f805acb7e8aa"
+    },
+    {
+      "path": "tests/test_wiki_export_line.py",
+      "bytes": 2503,
+      "sha256": "d6ca51e53478b28ba36038fd91cfdcf30913749cf3cf70558c5cf79bb5c1b9a7"
     },
     {
       "path": "tests/trust_browser.py",
