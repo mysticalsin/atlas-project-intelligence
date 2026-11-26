@@ -1082,8 +1082,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/memory.js",
-      "bytes": 10424,
-      "sha256": "738f9f2d8accb7bdf431fb962d407c8e4e9d7b2e90db8f144c940c1631f2d5a1"
+      "bytes": 10761,
+      "sha256": "87fa3ef5b0ad1bac314c7ac50873d802d4fe96ee0cb2c5d23ac5e74a12a1977c"
     },
     {
       "path": "deploy/cloudflare-edge/src/operate.js",
@@ -1469,6 +1469,11 @@
       "path": "deploy/cloudflare-edge/test/masking-routes.test.js",
       "bytes": 16267,
       "sha256": "3bf23c726cff9917a9dd73af40936bd2e58a7d61096d4cd6d708cef6f686127a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/memory-character.test.js",
+      "bytes": 2099,
+      "sha256": "de8cb6c626b9c7a74b47413ea23aef98c49342e272c18e118ffee06e848f91f2"
     },
     {
       "path": "deploy/cloudflare-edge/test/memory.test.js",
