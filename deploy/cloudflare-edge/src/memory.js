@@ -30,7 +30,16 @@ export async function bankId(env, sub, tenant = '') {
   return 'atlas-' + (await hmacHex(secret, 'hindsight-bank:' + sub)).slice(0, 40);
 }
 
-const str = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
+// A limit counts UTF-16 code units. Ending on the first half of a character would
+// store a lone surrogate, so that character is left out.
+function bound(text, n) {
+  if (text.length <= n) return text;
+  let end = n;
+  const unit = text.charCodeAt(end - 1);
+  if (unit >= 0xD800 && unit <= 0xDBFF) end -= 1;
+  return text.slice(0, end);
+}
+const str = (v, n) => typeof v === 'string' ? bound(v.replace(/\s+/g, ' ').trim(), n) : '';
 const safeId = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
 
 // Replace every recorded client detail (name, location, contact) wherever it appears.
@@ -55,7 +64,7 @@ export function projectDocument(p) {
     if ((r.gaps || []).length) lines.push('Still missing or unverified: ' + r.gaps.map(g => str(g, 200)).join('; ') + '.');
     if ((r.follow_ups || []).length) lines.push('Open follow-up questions: ' + r.follow_ups.map(g => str(g, 200)).join('; ') + '.');
   }
-  return scrub(lines.join('\n'), p.client).slice(0, 12000);
+  return bound(scrub(lines.join('\n'), p.client), 12000);
 }
 
 export function recallQuery(project) {
