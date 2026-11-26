@@ -15,6 +15,9 @@ import { auditKey } from './audit-chain.js';
 
 const MAX_BODY = 262144;
 const BASE = baseSecurityHeaders();
+// The library records a Teams person only when both ids are dashed UUIDs.
+// A blank or bare token is not a person. Forwarding it makes the bot answer 502.
+const DASHED_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TEAMS_ANCESTORS = 'https://teams.microsoft.com https://*.teams.microsoft.com https://*.cloud.microsoft';
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status,
   headers: { ...BASE, 'Content-Type': 'application/json', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" } });
@@ -40,6 +43,7 @@ export function eventOf(a, env) {
   if (conv.conversationType !== 'personal' || !a.id) return null;
   const base = { activityId: str(a.id, 256), aadObjectId: str(from.aadObjectId, 64), tenantId: str(a.channelData?.tenant?.id ?? conv.tenantId, 64),
     teamsUserId: str(from.id, 256), conversationId: str(conv.id, 512), serviceUrl: str(a.serviceUrl, 512) };
+  if (!DASHED_ID.test(base.tenantId) || !DASHED_ID.test(base.aadObjectId)) return null;
   base.subject = `${base.tenantId}:${base.aadObjectId}`.toLowerCase();
   const act = String(a.action || ''), has = list => (Array.isArray(list) ? list : []).some(m => m?.id === bot);
   if (a.type === 'installationUpdate' && act.startsWith('add')) return { ...base, kind: 'install' };

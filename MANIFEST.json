@@ -1217,8 +1217,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/teams-routes.js",
-      "bytes": 10995,
-      "sha256": "391074a1eaa2a4b8eb38c224c54b57f57cd203221686bc8560b071c23d32277e"
+      "bytes": 11325,
+      "sha256": "bb5d88a1a13893d37ea6e7faf9be1e38660aa582e38f3bc162bcf512a8c31d54"
     },
     {
       "path": "deploy/cloudflare-edge/src/teams.js",
@@ -1719,6 +1719,11 @@
       "path": "deploy/cloudflare-edge/test/sqlite.js",
       "bytes": 3391,
       "sha256": "e1bd38b2b9a3d9f2c72bfcf9d5ca74e1af9696cf6fb54bb58556483c4ac8f0b5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/teams-event-identity.test.js",
+      "bytes": 2353,
+      "sha256": "c3102255f59d12c02678012c88d5f0a9039b7b1aacf72233a93005cb368e1ca5"
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
