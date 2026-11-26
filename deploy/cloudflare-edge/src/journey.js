@@ -208,7 +208,10 @@ export async function saveJourney(lib, user, body = {}) {
   const incoming = obj(body.fields);
   const fields = { ...current.fields };
   for (const key of ['title', 'personalWork', 'evidence', 'clientAlias']) {
-    if (incoming[key]) fields[key] = field(incoming, key);
+    if (!incoming[key]) continue;
+    // A bare string is not a note. obj() would turn it into {} and replace a confirmed value with a blank.
+    if (typeof incoming[key] !== 'object' || Array.isArray(incoming[key])) throw fail(400, 'Send each journey note as text with its source. A bare value was not saved.');
+    fields[key] = field(incoming, key);
   }
   const skill = str(body.confirmSkill, 80);
   const confirmed = { ...current.confirmed };
