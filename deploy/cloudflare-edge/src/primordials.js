@@ -292,7 +292,8 @@ export function find(list, fn) {
   if (!captured || typeof fn !== 'function' || list == null) return null;
   try {
     const out = captured.find(list, fn);
-    if (out === undefined) return undefined;
+    // A miss is null, the same signal as a failed lookup. Callers reject only null.
+    if (out === undefined) return null;
     let seen = false;
     for (let i = 0; i < list.length; i++) if (list[i] === out) seen = true;
     return seen ? out : null;

@@ -1107,8 +1107,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/primordials.js",
-      "bytes": 10375,
-      "sha256": "4c221f3075bcbf15a9846b4b083ee8d42ea5ab9df5f4a64dc9fbb4aacba5a635"
+      "bytes": 10455,
+      "sha256": "9f88c3ee51b9c539ac9f44c3bf83a3344955bdfa2611de6e47228c362ca3efed"
     },
     {
       "path": "deploy/cloudflare-edge/src/privacy-routes.js",
@@ -1344,6 +1344,11 @@
       "path": "deploy/cloudflare-edge/test/confirm-page.test.js",
       "bytes": 7277,
       "sha256": "d3d75a1a80fbae1c2574cceee9541d3521eda8c66e08642ec21f706affa6b989"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/consent-category-miss.test.js",
+      "bytes": 2333,
+      "sha256": "7cd64f8f7a2066cdbebe2c1bde0669994e35899e74aa3970841bad4f53943c10"
     },
     {
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
