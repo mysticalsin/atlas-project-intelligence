@@ -887,8 +887,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-typesafe.mjs",
-      "bytes": 4583,
-      "sha256": "b2cf2212dfdded1c4d37565f6bac9bc50878f3a98f60af84e81a328ee562558a"
+      "bytes": 4756,
+      "sha256": "f10eec9f8a9003da513f4904878223f48b8d938a6fed1c7cfc5535f947f5d4d8"
     },
     {
       "path": "deploy/cloudflare-edge/dev/fakes/gaps.mjs",
@@ -1354,6 +1354,11 @@
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
       "bytes": 3941,
       "sha256": "319154b32e1944851b6d165082b5421dae3570c5f6ec5caf91e3df055b2bfe9f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/fake-typesafe-path.test.js",
+      "bytes": 2546,
+      "sha256": "320d828c50c34d36aa1ee3db48ab0d9102a120e950c603d7441b744885e49c88"
     },
     {
       "path": "deploy/cloudflare-edge/test/features.test.js",
