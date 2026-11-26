@@ -36,9 +36,9 @@ export function proofTypeOf(lib, row) {
   return (quantified ? 'quantified' : 'qualitative') + '+' + (confirmed ? 'confirmed' : 'unconfirmed');
 }
 
-// Counts per proof type and per story, cached per Library instance. The key covers new uses (count, last use) and
-// every outcome change: a rowid-weighted checksum of outcomes, so even two outcomes swapped at the same instant
-// invalidate it (a stricter key than §F7.1's COUNT/MAX pair).
+// Counts per proof type and per story, cached per Library instance. The key covers new uses (count, last use)
+// and the ordered outcome of every bid. A rowid-weighted sum is not that list: row 1 won with row 2 lost has the
+// same sum as row 1 withdrawn with row 2 won, so a correction at the same decided_at was served from the old cache.
 const cache = new WeakMap();
 function winScope(user) {
   if (user?.tenantEnforced === true) {
@@ -52,8 +52,10 @@ function tallies(lib, user) {
   const scope = winScope(user);
   if (scope === null) return { sig: 'refused', byType: new Map(TYPES.map(t => [t, { used: 0, won: 0, lost: 0, pending: 0 }])), bidsOf: new Map(), byRef: new Map(), totals: { bids: 0, decided: 0 } };
   const u = lib.rows("SELECT COUNT(*) AS n, MAX(u.used_at) AS at FROM bid_references u JOIN bids b ON b.id = u.bid_id WHERE lower(COALESCE(b.tenant, '')) = ?", scope)[0] || {};
-  const b = lib.rows("SELECT COUNT(*) AS n, MAX(decided_at) AS at, SUM(rowid * (CASE outcome WHEN 'won' THEN 1 WHEN 'lost' THEN 2 WHEN 'withdrawn' THEN 3 ELSE 4 END)) AS sum FROM bids WHERE lower(COALESCE(tenant, '')) = ?", scope)[0] || {};
-  const sig = [scope, u.n, u.at, b.n, b.at, b.sum].join('|'), hit = cache.get(lib);
+  const b = lib.rows("SELECT COUNT(*) AS n, MAX(decided_at) AS at FROM bids WHERE lower(COALESCE(tenant, '')) = ?", scope)[0] || {};
+  const outcomes = lib.rows("SELECT id, outcome FROM bids WHERE lower(COALESCE(tenant, '')) = ? ORDER BY id", scope)
+    .map(row => row.id + '\t' + row.outcome).join('\n');
+  const sig = [scope, u.n, u.at, b.n, b.at, outcomes].join('|'), hit = cache.get(lib);
   if (hit?.sig === sig) return hit;
   // Per story, one use is one bid ((bid_id, ref_id) is the key). Per proof type, `used` counts uses but outcomes count
   // distinct bids (bidsOf: type -> bid id -> outcome), so one bid citing five stories of a type is one decided bid.
