@@ -172,7 +172,11 @@ function applyDecided(prior, event) {
   const validation = { ...(prior.validation || {}), by: event.by || '', at: event.at || '', note: event.note || '', status: 'pending' };
   if (lane === 'manager') validation.managerDecision = decision;
   else validation.presalesDecision = decision;
+  // A lane approval must not clear an admin bypass. One approval would drop a
+  // published story, and both approvals would publish an admin test copy.
+  // A change request still ends the bypass.
   if (validation.managerDecision === 'changes_requested' || validation.presalesDecision === 'changes_requested') validation.status = 'changes_requested';
+  else if (prev.status === 'admin_bypass') validation.status = 'admin_bypass';
   else if (validation.managerDecision === 'approved' && validation.presalesDecision === 'approved') validation.status = 'validated';
   return { ...prior, validation };
 }
