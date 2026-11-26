@@ -152,8 +152,11 @@ function workflowCounts(lib, tenant, enforced) {
     if (status === 'withdrawn') out.withdrawn += 1;
     else if (status === 'published') out.published += 1;
     else if (status === 'admin_test') out.admin_test += 1;
-    else if (state.validation?.managerDecision === 'approved') out.awaiting_presales += 1;
-    else out.awaiting_manager += 1;
+    // Same rule as the journey list. Pre-sales is waiting only while the story is
+    // awaiting_validation, the manager has approved, and pre-sales has not.
+    // needs_work and changes_requested stay out of that card.
+    else if (status === 'awaiting_validation' && state.validation?.managerDecision === 'approved' && state.validation?.presalesDecision !== 'approved') out.awaiting_presales += 1;
+    else if (status === 'awaiting_validation' && state.validation?.managerDecision !== 'approved') out.awaiting_manager += 1;
     if (!state.quality) out.draft += 1;
   }
   return out;
