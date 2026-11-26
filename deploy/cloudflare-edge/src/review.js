@@ -52,11 +52,16 @@ summary: one or two sentences.`;
 
 // The leading name of a contact typed with a role or address: "Jane Doe (Head of Claims)", "Dupont, CFO",
 // "Max Roe <max@x.example>", "Jane Doe - Claims" -> the text before the first ( [ < , ; | / – — " - " or email.
-// '' when nothing is cut. NFC, whitespace collapsed.
+// The two slashes in http:// and https:// are not that cut: a web address is not a person's name, and the
+// scheme alone must not become one. '' when nothing is cut. NFC, whitespace collapsed.
 export function contactLead(contact) {
   const s = String(contact || '').normalize('NFC').replace(/\s+/g, ' ').trim();
-  const lead = s.replace(/\s*(?:[([<,;|/–—]| - |\S*@)[\s\S]*$/u, '').trim();
-  return lead !== s ? lead : '';
+  if (!s) return '';
+  const at = s.search(/\s*(?:[([<,;|–—]| - |\S*@|https?:\/\/|(?<!:)(?<!\/)\/(?!\/))/iu);
+  if (at <= 0) return '';
+  const lead = s.slice(0, at).trim();
+  if (!lead || /^https?:?$/i.test(lead)) return '';
+  return lead;
 }
 
 // The record's own client name, location and contact (3+ characters) become "the client": case-insensitive, and
