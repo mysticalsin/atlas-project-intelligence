@@ -49,7 +49,13 @@ const CUE=/(?:^|[^\p{L}\p{N}])(?:in|to|from|across|throughout|within|into|at)\s+
 const LIST=/^\s*(?:,|,?\s*(?:and|&))\s*(?:the\s+)?$/iu;  // 'and' or ',' continuing a cued list
 const reEsc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const fold=s=>s.replace(/\s+/g,' ').trim().toLowerCase();
-function chunks(q,n){const out=[];let i=0;while(i<q.length){let j=Math.min(q.length,i+n);if(j<q.length){const k=q.lastIndexOf(' ',j);if(k>i+n/2)j=k;}out.push(q.slice(i,j));i=j;}return out;}
+// The resolver reads at most 500 characters. Windows stay inside that, and they overlap by more than the
+// longest gazetteer name (52) so the last word of a country is not the only piece in the next window.
+const PLACE_OVERLAP=64;
+function chunks(q,n){const out=[];const overlap=Math.max(0,Math.min(PLACE_OVERLAP,n-1));let i=0;
+ while(i<q.length){let j=Math.min(q.length,i+n);if(j<q.length){const k=q.lastIndexOf(' ',j);if(k>i+n/2)j=k;}
+  out.push(q.slice(i,j));if(j>=q.length)break;let next=j-overlap;const boundary=q.lastIndexOf(' ',next);if(boundary>i)next=boundary;if(next<=i)next=i+1;i=next;}
+ return out;}
 // quote -> {pins: [{code, name, text}], notMapped: [{text, code|null}]}. A country is pinned only when the resolver returns it,
 // the words are its own name (not a city, alias or abbreviation) and a place cue precedes them.
 function pinsOf(quote,geo){
@@ -57,7 +63,7 @@ function pinsOf(quote,geo){
  if(!q||!geo||typeof geo.resolveLocations!=='function'||typeof geo.countryName!=='function')return {pins:[],notMapped:[]};
  const r=remember('p\u0000'+geoId(geo)+'\u0000'+q,()=>{
   const found=new Map();
-  for(const part of chunks(q,480)){let r;try{r=obj(geo.resolveLocations(part));}catch(e){continue;}  // the resolver reads at most 500 characters
+  for(const part of chunks(q,480)){let r;try{r=obj(geo.resolveLocations(part));}catch(e){continue;}  // each part stays under the resolver's 500-character read
    for(const c of arr(r.countries))if(c&&typeof c.code==='string'&&typeof c.from==='string'&&c.from.trim())  // the resolver keeps only the first words per
     for(const frag of [c.from.trim(),String(geo.countryName(c.code)||'').trim()])if(frag)found.set(fold(frag)+'\u0000'+c.code,{code:c.code,frag});  // country ('UK'): its own name is searched too
    for(const a of arr(r.ambiguous))if(typeof a==='string'&&a.trim())found.set(fold(a)+'\u0000',{code:null,frag:a.trim()});}  // 'Georgia', 'Congo': never pinned
