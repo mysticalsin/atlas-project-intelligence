@@ -882,8 +882,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-model.mjs",
-      "bytes": 6316,
-      "sha256": "75d55f717f53864c03eef9d47f6033ad88c796ec626e5cfc896a1ab00f0b9d5d"
+      "bytes": 6746,
+      "sha256": "fed31abd58e205c61041f99f7ddd329183f8348d24cfa4fbc43b2b18f71a1f14"
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-typesafe.mjs",
@@ -1689,6 +1689,11 @@
       "path": "deploy/cloudflare-edge/test/session.test.js",
       "bytes": 111364,
       "sha256": "4b59d9b3a147cfd7a3722aac039f2d165036aa60717e46722f6d76136c0a8a4d"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sheet-answers.test.js",
+      "bytes": 1907,
+      "sha256": "0feecbcf24550f72c610a8c6ff62f191983906667acdb3fee6a7e79c1b18b902"
     },
     {
       "path": "deploy/cloudflare-edge/test/sheet.test.js",
