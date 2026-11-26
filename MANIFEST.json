@@ -697,8 +697,8 @@
     },
     {
       "path": "atlas_voice/analyst.py",
-      "bytes": 5877,
-      "sha256": "d8fab96bdfd10f8e2f71a62dbfc4ef47d1bc1833ee1093df7e02a9c6d5b7f7bf"
+      "bytes": 6132,
+      "sha256": "96fe90021d9d3b532d6c18b612008cd9cdba9d5ee561929c605d951abf233c8d"
     },
     {
       "path": "atlas_voice/audio.py",
@@ -3344,6 +3344,11 @@
       "path": "tests/test_analyst.py",
       "bytes": 6193,
       "sha256": "2f11d708d41cec75ca251c43752d521d9da2bc323bab4a28f2ec66260ee76c6d"
+    },
+    {
+      "path": "tests/test_analyst_detail_shape.py",
+      "bytes": 1201,
+      "sha256": "17dd64638a80227e29367868d5d1a69ecbadac95e9baa4946fd1c491755791d7"
     },
     {
       "path": "tests/test_bakeoff.py",
