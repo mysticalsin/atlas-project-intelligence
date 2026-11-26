@@ -982,8 +982,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/classify.js",
-      "bytes": 8653,
-      "sha256": "c428d3c67ba88b733ceddcc44c66b2d6c78be7977c95c80c1ae75f01530abc67"
+      "bytes": 8863,
+      "sha256": "3670cd75b04afb2b82e5201bde78e96855563a0aef6e9a36f5924c9a293ef66d"
     },
     {
       "path": "deploy/cloudflare-edge/src/confirm-page.js",
@@ -1334,6 +1334,11 @@
       "path": "deploy/cloudflare-edge/test/claims.test.js",
       "bytes": 58846,
       "sha256": "a45c196d871a27ef4b317a1acac887d1d6cb7f64dc59c6b7f3c52c802e95a781"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/classify-visible-answer.test.js",
+      "bytes": 1472,
+      "sha256": "c8194955eaf7206fc7c7f49dede659d771f423549966da2cdaa3ddf302c425e2"
     },
     {
       "path": "deploy/cloudflare-edge/test/classify.test.js",
