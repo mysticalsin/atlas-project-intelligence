@@ -12,6 +12,23 @@ const BUCKETS = new Set(['upsert', 'review', 'insights', 'recommend', 'slides', 
 const FLAG = '(?:READ_ONLY|AI_OFF|EXTERNAL_OFF|INBOUND_OFF|BLOCKED_SUBS|CSP:report-only|CSRF_BIND:sub|REPLY_GUARD:off|ADAPTERS:live|ADAPTERS:mock)';
 const FLAG_BUCKET = new RegExp('^' + FLAG + '(?:-' + FLAG + ')*$');
 const bucketOf = v => { const s = String(v); return BUCKETS.has(s) || FLAG_BUCKET.test(s) ? s : undefined; };
+// An http(s) or ws(s) value keeps its origin: scheme, host, and a non-default port.
+// A path, query, fragment, or userinfo is dropped, so deleting ? or @ cannot glue a token
+// or a password into the stored field. A fixed keyword, or a data, blob, about, or javascript
+// scheme, stays as that word. Anything else is unknown.
+function blockedField(value) {
+  const s = String(value ?? '').trim();
+  if (/^(inline|eval|wasm-eval|trusted-types-policy|trusted-types-sink|data|blob|about|self)$/i.test(s)) return s.toLowerCase();
+  try {
+    const u = new URL(s);
+    if (/^(data|blob|about|javascript):$/.test(u.protocol)) return u.protocol.slice(0, -1);
+    if (/^https?:$/.test(u.protocol) || /^wss?:$/.test(u.protocol)) {
+      const origin = u.origin;
+      return origin && origin !== 'null' ? origin.slice(0, 80) : 'unknown';
+    }
+  } catch { /* not a URL */ }
+  return 'unknown';
+}
 
 // '/api/library/<32 hex>/validate' -> '/api/library/:id/validate'. Only short lower-case words survive; everything else (ids,
 // e-mail addresses, encoded text) becomes ':id', and at most six segments are kept. The query string is never read.
@@ -49,7 +66,7 @@ export async function secEvent(env, event, f = {}, write = line => console.log(l
     else if (k === 'subj') v = String(v).toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 16);
     else if (k === 'status' || k === 'n' || k === 'legacy') v = Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : undefined;
     else if (k === 'directive') v = /^[a-z-]{3,40}$/.test(String(v)) ? String(v) : 'unknown';
-    else if (k === 'blocked') v = String(v).toLowerCase().replace(/[^a-z0-9.:/-]/g, '').slice(0, 80); // an origin: scheme and host, never a path
+    else if (k === 'blocked') v = blockedField(v);
     else if (k === 'role') v = ['user', 'reviewer', 'admin', 'external', 'system'].includes(v) ? v : undefined;
     else if (k === 'method') v = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(String(v).toUpperCase()) ? String(v).toUpperCase() : undefined;
     else if (k === 'bucket') v = bucketOf(v);
