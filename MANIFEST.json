@@ -777,8 +777,8 @@
     },
     {
       "path": "atlas_voice/languages.py",
-      "bytes": 28070,
-      "sha256": "1204c64f2cf9da74df9636acd927aad55d64fb124ef192c8713da3576a3e61b6"
+      "bytes": 28881,
+      "sha256": "5575d8aaa43b3314f0296e552f4b70c195007f8e0c2550cae342a2c7a114bce7"
     },
     {
       "path": "atlas_voice/memory.py",
@@ -3374,6 +3374,11 @@
       "path": "tests/test_csp.py",
       "bytes": 8466,
       "sha256": "c7d70bfe003b1b67b7184c80a7cafe1de0eeb3f5f524b89133d809cd83d0f1aa"
+    },
+    {
+      "path": "tests/test_cyrillic_lang.py",
+      "bytes": 2786,
+      "sha256": "7cc03d12feffab951bbf865f125f1801271c4084510b4f4989d647a23742b392"
     },
     {
       "path": "tests/test_depth.py",

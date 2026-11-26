@@ -66,7 +66,11 @@ SCRIPT_LANG = {'greek': 'el', 'armenian': 'hy', 'hebrew': 'he', 'devanagari': 'h
                'georgian': 'ka', 'hangul': 'ko'}
 # Letters that tell one language of a shared script from another (checked after the script is known).
 ARABIC_MARKS = {'fa': 'پچژگ', 'ur': 'ٹڈڑںے'}
-CYRILLIC_MARKS = {'uk': 'іїєґ', 'ru': 'ыэъё'}
+# ы/э/ё name Russian. ъ is not in this set: it is a Bulgarian vowel unless it
+# stands immediately before е/ё/ю/я, which is the Russian hard sign.
+CYRILLIC_MARKS = {'uk': 'іїєґ', 'ru': 'ыэё'}
+_HARD_SIGN = 'ъ'
+_IOTATED = 'еёюя'
 # Latin-script languages: stopwords (two points each, one when another language lists the same word) and marker letters (one point each, at most MARK_CAP).
 LATIN_STOPWORDS = {
     'en': 'the and is are was were to of in that it for with on as this have has had but not they we you i at be from or an by which what when how there their our your can will would about all been if more one so than then them these those do does did because just also its',
@@ -121,6 +125,28 @@ def _tokens(text):
     return out
 
 
+def _cyrillic_lang(text):
+    """Ukrainian, Russian, or None when U+044A is a vowel rather than the hard sign.
+
+    Ukrainian letters win, including when Russian letters are also present.
+    A hard sign before an iotated vowel is still Russian. Any other hard sign
+    is the Bulgarian vowel, so the text is not named Russian.
+    """
+    lowered = text.lower()
+    if any(ch in CYRILLIC_MARKS['uk'] for ch in lowered):
+        return 'uk'
+    for index, ch in enumerate(lowered):
+        if ch in CYRILLIC_MARKS['ru']:
+            return 'ru'
+        if ch == _HARD_SIGN and index + 1 < len(lowered) and lowered[index + 1] in _IOTATED:
+            return 'ru'
+    if _HARD_SIGN in lowered:
+        return None
+    toks = _tokens(lowered)
+    scores = {code: sum(1 for tok in toks if tok in words) for code, words in _CYR_STOP.items()}
+    return 'uk' if scores['uk'] > scores['ru'] else 'ru'
+
+
 def detect(text):
     """The language a short text is written in: {'lang': code or None, 'units': words (characters / 2 for scripts without spaces), 'score': int,
     'strong': bool}. 'lang' is None when the text is too thin or two languages tie; 'strong' means a long, unambiguous text (the session may then switch
@@ -152,10 +178,7 @@ def detect(text):
     elif top == 'arabic':
         lang = next((code for code, marks in ARABIC_MARKS.items() if any(c in marks for c in text)), 'ar')
     elif top == 'cyrillic':
-        toks = _tokens(text)
-        mark = next((code for code, marks in CYRILLIC_MARKS.items() if any(c in marks for c in text.lower())), None)
-        scores = {code: sum(1 for t in toks if t in words) for code, words in _CYR_STOP.items()}
-        lang = mark or ('uk' if scores['uk'] > scores['ru'] else 'ru')
+        lang = _cyrillic_lang(text)
     elif top == 'latin':
         return _latin(text, out)
     else:
