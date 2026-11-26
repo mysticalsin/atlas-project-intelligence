@@ -12,7 +12,7 @@ export function fake(system, input) {
     const all = sentences(input), wanted = all.filter(s => /\b(must|shall|need\w*|require\w*|experience|proof|proven|demonstrat\w*|reference)\b/i.test(s)).slice(0, 8);
     const find = re => all.find(s => re.test(s)) || '';
     return JSON.stringify({ requirements: wanted.map(s => ({ text: s.slice(0, 220), kind: kindOf(s), must: /\b(must|shall|required)\b/i.test(s) })),
-      customer: { problem: all[0] || '', buyer: (input.match(/\b(COO|CFO|CIO|CTO|CEO|[Dd]irector of [a-z]+|[Hh]ead of [a-z]+)\b/) || [''])[0],
+      customer: { problem: all[0] || '', buyer: (input.match(/\b(COO|CFO|CIO|CTO|CEO|[Dd]irector of [a-z]+|[Hh]ead of [a-z]+)\b/i) || [''])[0],
         constraints: find(/\b(budget|deadline|regulat\w*|within|constraint)\b/i), desired_outcome: find(/\b(reduc\w*|faster|improv\w*|outcome|goal)\b/i) } });
   }
   if (system.startsWith('You judge which past project references prove the requirements of a bid.')) {
