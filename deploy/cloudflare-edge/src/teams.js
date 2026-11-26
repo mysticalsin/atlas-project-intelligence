@@ -20,9 +20,17 @@ export function teamsStatus(env = {}) {
 
 const hostsOf = env => [...SERVICE_HOSTS, ...String(env?.TEAMS_SERVICE_HOSTS || '').toLowerCase().split(',').map(h => h.trim()).filter(h => /^[a-z0-9.-]+$/.test(h))];
 // The serviceUrl as a base ending in '/', when it is https on an allow-listed host; else ''.
+// A query or a fragment is not part of that base. Appending the activities path
+// would otherwise land in the query or the fragment, and the post would miss the conversation.
 function serviceBase(value, env) {
-  try { const u = new URL(String(value)); return u.protocol === 'https:' && !u.username && !u.password && hostsOf(env).includes(u.hostname.toLowerCase()) ? u.href.replace(/\/?$/, '/') : ''; }
-  catch { return ''; }
+  try {
+    const u = new URL(String(value));
+    if (u.protocol !== 'https:' || u.username || u.password) return '';
+    if (!hostsOf(env).includes(u.hostname.toLowerCase())) return '';
+    if (!u.pathname.endsWith('/')) u.pathname += '/';
+    if (u.search || u.hash || u.href.includes('?') || u.href.includes('#')) return '';
+    return u.href;
+  } catch { return ''; }
 }
 const b64url = s => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((String(s).length + 3) % 4)), c => c.charCodeAt(0));
 
