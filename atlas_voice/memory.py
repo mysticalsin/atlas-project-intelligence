@@ -6,6 +6,22 @@ import asyncio
 import hashlib
 import hmac
 
+
+def _text_or_blank(value):
+    """A memory field is text. Null is blank, not the word None."""
+    return value if isinstance(value, str) else ''
+
+
+def _recalled_line(item):
+    if hasattr(item, 'text'):
+        value = item.text
+    elif isinstance(item, dict):
+        value = item.get('text', '')
+    else:
+        value = ''
+    return _text_or_blank(value)
+
+
 class PrivateMemory:
     def __init__(self, config, client_factory=None):
         self.config = config
@@ -34,7 +50,7 @@ class PrivateMemory:
                 query='Interview preferences, previous contribution context, unresolved questions, and user-confirmed resume pointers. Never infer permissions or project results.',
                 budget='low', max_tokens=300), timeout=8)
             results = (response.results if hasattr(response, 'results') else response.get('results', [])) or []
-            text = '\n'.join((r.text if hasattr(r, 'text') else r.get('text', '')) for r in results[:5])
+            text = '\n'.join(line for line in (_recalled_line(item) for item in results[:5]) if line)
             return text[:1200]
         finally:
             await c.aclose()
@@ -77,7 +93,7 @@ class PrivateMemory:
 
     async def get_continuity(self,subject):
         result=await self._document(subject)
-        return str(result.original_text)[:4000]
+        return _text_or_blank(result.original_text)[:4000]
 
     async def delete_continuity(self,subject):
         result=await self._document(subject,True)
