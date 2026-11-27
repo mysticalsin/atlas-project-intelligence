@@ -76,6 +76,7 @@ ANALYST_API_KEY=$(cat "$ATLAS/.workers-ai.key")
 ENV
 rm -f "$ATLAS/.workers-ai.key"
 umask 022
+# Paid Workers AI stays on the default enforce mode. Set ATLAS_LEDGER_URL and ATLAS_LEDGER_TOKEN before starting.
 
 step "wait for speech servers (first start downloads models)"
 .venv/bin/python - <<'PY'

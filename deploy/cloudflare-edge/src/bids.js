@@ -14,6 +14,7 @@ import { parseJSON, numbersIn, candidateCard, rankPool, retrievalOf } from './re
 import { claimSummary, confirmationStatus } from './claims.js';
 import { listForBid, ensure as ensureGaps } from './gaps.js';
 import { customerJev } from './customer-jev.js';
+import { budgetOutcome, generatedText, optionalModel } from './budget-stop.js';
 import { winSignals, proofTypeOf } from './winloop.js';
 
 export const READY = true;
@@ -253,12 +254,14 @@ async function create({ lib, user, body }) {
   const tenant = bidTenant(user);
   if (!rateLimit(lib, 'bid-create:' + tenant + ':' + user.email, 30, 864e5)) throw fail(429, 'You have created 30 bids today. Try again tomorrow.');
   const a = pseudonymise(lib, alias, { prospects }), p = pseudonymise(lib, brief, { prospects, map: a.map });
-  let reqs = null, customer = customerOf({}), method = 'keyword';
+  let reqs = null, customer = customerOf({}), method = 'keyword', budget = null;
   if (lib.complete) {
     // The author's own words the model received stay as the model wrote them (§2.3 display rule, review #12). Stored
     // text is placeholder form: the other view and the one-pager apply the full recordMask again at read time.
     const sent = p.text.slice(0, 24000);
-    const got = parseRequirements(await lib.complete([{ role: 'system', content: REQUIREMENTS_POLICY }, { role: 'user', content: sent }]).catch(() => ''));
+    const gotModel = await optionalModel(lib.complete([{ role: 'system', content: REQUIREMENTS_POLICY }, { role: 'user', content: sent }]), '');
+    budget = gotModel.budget;
+    const got = parseRequirements(gotModel.value);
     if (got) { const mask = recordMask(lib, { authorText: sent }); reqs = got.requirements.map(r => ({ ...r, text: mask(r.text) })); customer = mask(got.customer); method = 'model'; }
   }
   if (!reqs) reqs = keywordRequirements(p.text);
@@ -272,7 +275,8 @@ async function create({ lib, user, body }) {
     JSON.stringify(pseudo), JSON.stringify(reqs), JSON.stringify(customer), method, at, at, tenant);
     lib.log(id, user.email, 'bid created', `${reqs.length} requirements, ${method}`);
   });
-  return bidOut(lib, user, load(lib, user, id));
+  const created = bidOut(lib, user, load(lib, user, id));
+  return budget ? { ...created, budget } : created;
 }
 
 // Map keys a stored placeholder-form text uses ('[company 2]' in model output is the key '[Company 2]').
@@ -344,14 +348,19 @@ const industryBoost = (sectorText, row) => { const s = String(row.data?.sector |
 // Retrieval (reuse.rankPool: per-method floor, semantic first, boosts reorder only), then JEV when asked and
 // consented, else (or when JEV fails) BID_RANK_POLICY. Stored text is placeholder form with recordText applied.
 async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev, user }) {
-  const qv = lib.embed ? await lib.embed(query).catch(() => null) : null;
+  const embedGot = lib.embed ? await optionalModel(lib.embed(query), null) : { value: null, budget: null };
+  const qv = embedGot.value;
+  let budget = embedGot.budget;
   const wins = winSignals(lib, user), sectorText = reqs.filter(r => r.kind === 'sector').map(r => r.text).join(' ').toLowerCase();
   const kept = rankPool(pool, query, qv, { floor: SIM_FLOOR, boost: r => industryBoost(sectorText, r) + (wins.get(r.id)?.boost || 0) }).slice(0, 12);
   const retrieval = retrievalOf(kept) || (qv ? 'semantic' : 'lexical');
-  if (!kept.length) return { verdict: 'none', method: retrieval, results: [], coverage: cover(reqs, [], [], 'unmet'), note: NOTE.none };
+  if (!kept.length) return { verdict: 'none', method: retrieval, results: [], coverage: cover(reqs, [], [], 'unmet'), note: budget ? budget.message : NOTE.none, ...(budget ? { budget } : {}) };
+  const stopped = () => ({ verdict: 'unranked', method: retrieval + ' (not ranked)', coverage: cover(reqs, [], [], 'unknown'), note: budget.message, budget,
+    results: kept.slice(0, limit).map(k => ({ ...base(k.row.id), relevance: null, covers: [], why: '', transferable: [], caveat: '' })) });
   const views = kept.map(k => recordView(lib, k.row.data)), cards = kept.map((k, i) => candidateCard(k.row.id, views[i]));
   const byId = new Map(kept.map(k => [k.row.id, k])), mask = recordMask(lib);
   const base = id => ({ id, similarity: round3(byId.get(id).similarity), retrieval: byId.get(id).retrieval });
+  if (budget) return stopped();
   // JEV ranks only with all four customer fields; one the brief did not give is named, never reported as a JEV failure.
   const missing = CUSTOMER.filter(k => !customer[k].trim()).map(k => k.replace('_', ' '));
   let fellBack = '';
@@ -370,10 +379,18 @@ async function rankRun(lib, env, { pool, query, reqs, customer, limit, jev, user
         results: shown.map(s => ({ ...base(s.id), relevance: Math.round(s.relevance_score), covers: [], transferable: [], fitClass: s.fit_class,
           why: `JEV estimate: problem fit ${score(s, 'problem_fit')}/4, transferability ${score(s, 'transferability')}/4, evidence ${score(s, 'evidence')}/4, decision value ${score(s, 'decision_value')}/4.`,
           caveat: s.review_required ? 'Review first: low model confidence or undated evidence.' : '' })) };
-    } catch { fellBack = ' (JEV failed; fell back to Workers AI)'; }
+    } catch (e) {
+      const stop = budgetOutcome(e);
+      if (stop) budget = stop;
+      else fellBack = ' (JEV failed; fell back to Workers AI)';
+    }
   }
-  const ranked = lib.complete ? parseBidRank(await lib.complete([{ role: 'system', content: BID_RANK_POLICY }, { role: 'user', content: JSON.stringify({
-    requirements: reqs, customer, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id), reqs.map(r => r.id)) : null;
+  if (budget) return stopped();
+  const rankGot = lib.complete ? await optionalModel(lib.complete([{ role: 'system', content: BID_RANK_POLICY }, { role: 'user', content: JSON.stringify({
+    requirements: reqs, customer, candidates: cards }) }]), '') : { value: null, budget: null };
+  budget = rankGot.budget;
+  if (budget) return stopped();
+  const ranked = lib.complete ? parseBidRank(rankGot.value, cards.map(c => c.id), reqs.map(r => r.id)) : null;
   if (ranked === null) return { verdict: 'unranked', method: retrieval + ' (not ranked)' + fellBack, coverage: cover(reqs, [], [], 'unknown'), note: NOTE.unranked,
     results: kept.slice(0, limit).map(k => ({ ...base(k.row.id), relevance: null, covers: [], why: '', transferable: [], caveat: UNRANKED })) };
   const results = [...ranked].sort((x, y) => y.relevance - x.relevance).slice(0, limit)
@@ -425,7 +442,8 @@ function matchOut(lib, user, run, render) {
   }
   const visible = id => !!at(id).level;
   return { runAt: run.runAt, verdict: run.verdict, method: run.method, results,
-    coverage: (run.coverage || []).map(c => ({ ...c, refIds: c.refIds.filter(visible), suggested: c.suggested.filter(s => visible(s.refId)) })), note: run.note, label: run.label };
+    coverage: (run.coverage || []).map(c => ({ ...c, refIds: c.refIds.filter(visible), suggested: c.suggested.filter(s => visible(s.refId)) })), note: run.note, label: run.label,
+    ...(run.budget ? { budget: run.budget } : {}) };
 }
 
 // ---- One-pager (§F1.1 step 4): footnotes built by code, numbered by first use, carrying the exact masked text. ----
@@ -447,7 +465,7 @@ async function onepager({ lib, user, body }, row) {
     input.push({ key, title: maskedTitle(lib, r.data), snippets: snippets.map(s => ({ id: `${key}:${s.id}`, text: s.text })) });
   });
   const reqs = requirementsOf(row);
-  const out = parseOnePager(await lib.complete([{ role: 'system', content: ONEPAGER_POLICY }, { role: 'user', content: JSON.stringify({ requirements: reqs, references: input }) }]).catch(() => ''),
+  const out = parseOnePager(await generatedText(lib.complete([{ role: 'system', content: ONEPAGER_POLICY }, { role: 'user', content: JSON.stringify({ requirements: reqs, references: input }) }])),
     byId, reqs.map(r => r.id));
   if (!out) throw fail(502, 'The one-pager writer did not produce a usable claim. Try again.');
   const numbers = new Map(), footnotes = [], statusOf = new Map();

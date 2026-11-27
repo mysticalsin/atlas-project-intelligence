@@ -67,11 +67,18 @@ Pushing to the `live` branch deploys; `main` stays the working branch. One-time 
 |---|---|
 | Branch | `live` |
 | Root directory | `deploy/cloudflare-edge` |
-| Build command | `python3 ../../build.py && cp ../../ATLAS_Voice.html src/atlas.html && node --test test/*.test.js` |
+| Build command | `python3 -m pip install -r ../../requirements-test.txt && python3 ../../build.py && cp ../../ATLAS_Voice.html src/atlas.html && node --test test/*.test.js` |
 | Deploy command | `npx wrangler deploy` |
 
 The Worker name in `wrangler.jsonc` (`atlas`) must match the connected Worker. Secrets (`CSRF_SECRET`, `ELEVENLABS_API_KEY`, …) stay on the Worker; a build never reads or changes them. A failing edge test stops the deploy. Every deploy restarts the Durable Objects, so interviews in progress are cut: release with `git push origin main:live` only when nobody is interviewing.
 ## Tests
+One ceiling test spawns Python and imports `aiohttp`. Install the test requirements, then run the suite. From the repo root:
+
+```sh
+python3 -m pip install -r requirements-test.txt
+make test-edge
+```
+
 `make test-edge` (Node) runs the Access JWT verification with real RS256 signatures, routes, CSRF injection, AI response parsing, full simulated interviews, barge-in and the contract failures.
 
 ## Windows / Microsoft 365 sign-in

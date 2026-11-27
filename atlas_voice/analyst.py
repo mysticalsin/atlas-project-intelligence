@@ -12,6 +12,8 @@ import json
 import aiohttp
 
 from .quality import FIELDS, TOOLS, InterviewLedger
+from .limits import input_tokens, output_tokens
+from .spend import reserve, usage_from
 
 RECORD_TOOL = next(t for t in TOOLS if t['name'] == 'record_details')
 CHAT_TOOLS = [{'type': 'function', 'function': {k: RECORD_TOOL[k] for k in ('name', 'description', 'parameters')}}]
@@ -89,11 +91,18 @@ def chat_completer(http, url, model, key=''):
     headers = {'Authorization': 'Bearer ' + key} if key else {}
 
     async def complete(messages):
-        async with http.post(url, headers=headers, json={
-                'model': model, 'messages': messages, 'tools': CHAT_TOOLS, 'tool_choice': 'auto',
-                'temperature': 0, 'max_tokens': 800}, timeout=aiohttp.ClientTimeout(total=20)) as response:
-            response.raise_for_status()
-            data = await response.json()
+        cap = output_tokens('gatewayAnalyst')
+        body = {'model': model, 'messages': messages, 'tools': CHAT_TOOLS, 'tool_choice': 'auto', 'temperature': 0, 'max_tokens': cap}
+        hold = await reserve({'kind': 'analyst', 'provider': 'openai', 'model': model,
+                              'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': cap}, http)
+        try:
+            async with http.post(url, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=20)) as response:
+                response.raise_for_status()
+                data = await response.json()
+            await hold.settle(usage_from(data))
+        except Exception as error:
+            await hold.settle(error=type(error).__name__)
+            raise
         message = data['choices'][0]['message']
         return [{'id': c['id'], 'name': c['function']['name'], 'arguments': c['function'].get('arguments', '{}')}
                 for c in (message.get('tool_calls') or [])]

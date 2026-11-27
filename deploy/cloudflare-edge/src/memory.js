@@ -4,6 +4,7 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 import { TENANT_ID, tenantEnforced } from './authz.js';
+import { paid, TYPESAFE_ENDPOINT, utf8Length, LIMITS, inputTokenCeiling, boundedJevBody } from './meter.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -74,9 +75,14 @@ export function memoryConfigured(env = {}) {
 export function hindsight(env, fetcher = fetch) {
   if (!memoryConfigured(env)) return null;
   const base = String(env.HINDSIGHT_URL).replace(/\/+$/, ''), key = env.HINDSIGHT_API_KEY || '';
-  const call = async (method, path, body, timeoutMs = 8000) => {
-    const r = await fetcher(base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
-      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const meter = paid(env);
+  const call = async (method, path, body, timeoutMs = 8000, operation = 'bank') => {
+    const payload = body === undefined ? '' : JSON.stringify(body);
+    if (utf8Length(payload) > LIMITS.memoryBody.maxBytes) throw Object.assign(new Error('Memory request exceeds the byte cap.'), { status: 413 });
+    const estimate = () => ({ kind: 'memory', provider: 'hindsight', operation,
+      inputTokens: inputTokenCeiling(utf8Length(payload)), outputTokens: operation === 'recall' ? Math.ceil(Number(body?.max_tokens) || 0) : 0 });
+    const r = await meter.fetch(estimate, fetcher, base + path, { method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
+      headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : payload });
     if (!r.ok) throw Object.assign(new Error('Hindsight HTTP ' + r.status), { status: r.status });
     return r.status === 204 ? {} : r.json().catch(() => ({}));
   };
@@ -85,21 +91,22 @@ export function hindsight(env, fetcher = fetch) {
   return {
     async ensureBank(b) {
       if (ready.has(b)) return;
-      await call('PUT', bank(b), { retain_mission: RETAIN_MISSION, reflect_mission: REFLECT_MISSION, enable_observations: true });
+      await call('PUT', bank(b), { retain_mission: RETAIN_MISSION, reflect_mission: REFLECT_MISSION, enable_observations: true }, 8000, 'bank');
       ready.add(b);
     },
     async retain(b, items) {
       await this.ensureBank(b);
-      return call('POST', bank(b) + '/memories', { items, async: true }, 15000);
+      return call('POST', bank(b) + '/memories', { items, async: true }, 15000, 'retain');
     },
-    async recall(b, query, { tags, maxTokens = 700, timeoutMs = 3000 } = {}) {
-      const res = await call('POST', bank(b) + '/memories/recall', { query, budget: 'low', max_tokens: maxTokens, ...(tags ? { tags, tags_match: 'any' } : {}) }, timeoutMs);
+    async recall(b, query, { tags, maxTokens = LIMITS.memoryRecall.maxTokens, timeoutMs = 3000 } = {}) {
+      const cap = Math.min(LIMITS.memoryRecall.maxTokens, Math.max(1, Math.ceil(Number(maxTokens) || LIMITS.memoryRecall.maxTokens)));
+      const res = await call('POST', bank(b) + '/memories/recall', { query, budget: 'low', max_tokens: cap, ...(tags ? { tags, tags_match: 'any' } : {}) }, timeoutMs, 'recall');
       return (Array.isArray(res.results) ? res.results : []).map(x => ({ text: str(x?.text, 400), tags: Array.isArray(x?.tags) ? x.tags : [], when: str(x?.mentioned_at || '', 40), documentId: str(x?.document_id || '', 80) })).filter(x => x.text);
     },
-    documents: b => call('GET', bank(b) + '/documents'),
-    forgetDocument: (b, id) => call('DELETE', bank(b) + '/documents/' + encodeURIComponent(id)),
-    forgetAll: b => call('DELETE', bank(b)).finally(() => ready.delete(b)),
-    stats: b => call('GET', bank(b) + '/stats'),
+    documents: b => call('GET', bank(b) + '/documents', undefined, 8000, 'list'),
+    forgetDocument: (b, id) => call('DELETE', bank(b) + '/documents/' + encodeURIComponent(id), undefined, 8000, 'forget'),
+    forgetAll: b => call('DELETE', bank(b), undefined, 8000, 'forget').finally(() => ready.delete(b)),
+    stats: b => call('GET', bank(b) + '/stats', undefined, 8000, 'stats'),
   };
 }
 
@@ -127,9 +134,9 @@ export async function jevRelevant(env, memories, project, fetcher = fetch) {
   if (!env.TYPESAFE_API_KEY || !other.length) return { memories, checked: 0 };
   const questions = Object.fromEntries(other.map((m, i) => ['m' + i, { type: 'noul',
     instructions: `Would \`memories[${i}]\` help an interviewer talking with this consultant about the project in \`project\`, either as a preference about how they like to be interviewed or as information about this same project, rather than about a different project?` }]));
-  const r = await fetcher('https://api.typesafe.ai/v1/systemone', { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
+  const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, TYPESAFE_ENDPOINT, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(2500),
     headers: { Authorization: 'Bearer ' + env.TYPESAFE_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: env.JEV_MODEL || 'jev-latest', state: { project: { title: str(project?.title, 140), stage: str(project?.stage, 40), sector: str(project?.sector, 80) }, memories: other.map(m => m.text) }, questions }) });
+    body: boundedJevBody(JSON.stringify({ model: env.JEV_MODEL || 'jev-latest', state: { project: { title: str(project?.title, 140), stage: str(project?.stage, 40), sector: str(project?.sector, 80) }, memories: other.map(m => m.text) }, questions })) });
   if (!r.ok) throw new Error('JEV HTTP ' + r.status);
   const a = (await r.json())?.answers || {};
   const keep = other.filter((_, i) => typeof a['m' + i]?.noul === 'number' && a['m' + i].noul >= 0.5);

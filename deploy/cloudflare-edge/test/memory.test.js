@@ -4,7 +4,7 @@ import { bankId, hindsight, projectDocument, retainItems, memoryNote, jevRelevan
 import { memoryRoutes } from '../src/memory-routes.js';
 import { Session, talkerMessages } from '../src/session.js';
 
-const ENV = { HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', HINDSIGHT_OPT_IN: '1', CSRF_SECRET: 'csrf', ATLAS_TENANT_ISOLATION: 'local-synthetic' };
+const ENV = { LEDGER_MODE: 'off', HINDSIGHT_URL: 'https://hs.example/', HINDSIGHT_API_KEY: 'hs-key', HINDSIGHT_OPT_IN: '1', CSRF_SECRET: 'csrf', ATLAS_TENANT_ISOLATION: 'local-synthetic' };
 function fakeHS(reply = {}) {
   const calls = [];
   const fetcher = async (url, init) => { calls.push({ url, method: init.method, auth: init.headers.Authorization, body: init.body ? JSON.parse(init.body) : null });
@@ -52,7 +52,7 @@ test('Hindsight client: verified endpoints, Bearer key, bank configured once, as
   assert.deepEqual(got.map(g => g.text), ['Baseline was not measured yet.']);
   assert.equal(hindsight({ ...ENV, HINDSIGHT_API_KEY: '' }, fetcher), null);
   assert.equal(hindsight({ HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1' }, async () => new Response('{}')), null, 'no URL and the public host is not implied');
-  const cloud = []; await hindsight({ HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1', HINDSIGHT_URL: 'https://api.hindsight.vectorize.io', HINDSIGHT_ALLOW_CLOUD: '1' }, async u => { cloud.push(String(u)); return new Response('{}'); }).stats('b');
+  const cloud = []; await hindsight({ LEDGER_MODE: 'off', HINDSIGHT_API_KEY: 'k', HINDSIGHT_OPT_IN: '1', HINDSIGHT_URL: 'https://api.hindsight.vectorize.io', HINDSIGHT_ALLOW_CLOUD: '1' }, async u => { cloud.push(String(u)); return new Response('{}'); }).stats('b');
   assert.equal(cloud[0], 'https://api.hindsight.vectorize.io/v1/default/banks/b/stats');
 });
 
@@ -62,7 +62,7 @@ test('memory note is bounded and labelled; JEV keeps this project\'s memories an
   assert.equal((await jevRelevant({}, mem, { id: 'p-1' })).memories.length, 3, 'no key: unchanged');
   let body = null;
   const fetcher = async (url, init) => { body = JSON.parse(init.body); return new Response(JSON.stringify({ answers: { m0: { noul: 0.9 }, m1: { noul: 0.1 } } })); };
-  const r = await jevRelevant({ TYPESAFE_API_KEY: 'k' }, mem, { id: 'p-1', title: 'Claims' }, fetcher);
+  const r = await jevRelevant({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' }, mem, { id: 'p-1', title: 'Claims' }, fetcher);
   assert.deepEqual(r.memories.map(m => m.text), ['Own project: baseline missing.', 'Prefers short questions.']); assert.equal(r.checked, 2);
   assert.deepEqual(Object.values(body.questions).map(q => q.type), ['noul', 'noul']); assert.deepEqual(body.state.memories, ['Prefers short questions.', 'Other project: SAP rollout in Belgium.']);
 });

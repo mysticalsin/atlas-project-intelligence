@@ -438,7 +438,7 @@ Every policy adds: "Bracketed tokens such as [Company 1] are masked names: copy 
 - **`customer`** is the placeholder-form `{problem, buyer, constraints, desired_outcome}`, each ≤ 3,000 characters. **`stories`** is at most 12 entries of `{id, title, revision, content_hash, sections: candidateCard-derived, sources: [{name, version}]}` built from `recordView` only.
 - **Constants:** the same `DIMENSIONS`, `LEVELS` and 0.70 review threshold as `jev.py`. Recency is the deterministic `source_freshness` date proxy.
 - **Parity:** `test/gen_jev_parity.py` (run with `uv run --with aiohttp python3 …`, because `jev.py` imports aiohttp) records `request_body` (deterministic freshness), `parse_result`, `source_freshness`, `shortlist`, the threshold and `no_strong_match` for fixed inputs into `test/jev-customer.vectors.json`; `test/customer-jev.test.js` replays them. `tests/test_edge.py`'s staleness loop covers the file.
-- **Transport:** `POST https://api.typesafe.ai/v1/systemone`, `redirect: 'manual'`, `AbortSignal.timeout(18000)`, retry on 429/529 at most twice, body ≤ 65,000 bytes.
+- **Transport:** `POST https://api.typesafe.ai/v1/systemone`, `redirect: 'manual'`, `AbortSignal.timeout(18000)`, retry on 429/529 at most twice, body at most 64,000 bytes (the published context, one token per byte).
 - **Consent:** only called when the request carries `jevConsent: true`. The UI checkbox is unchecked by default and reads "Send the anonymised requirements and candidate summaries to JEV (TypeSafe)".
 - **Failure:** any error drops back to `BID_RANK_POLICY`, and `method` says so.
 

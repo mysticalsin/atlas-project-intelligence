@@ -67,7 +67,7 @@ async function grant(l, user, granted = true) {
   return profile.routes({ method: 'POST', parts: ['profile', 'consent'], body: { kind: 'jevRating', version: 1, granted }, user: { idp: {}, mail: user.email, ...user }, lib: l, env: {},
     url: new URL('https://atlas.test/api/library/profile/consent') });
 }
-async function world({ reply, fetcher = fakeTS(reply), complete = counted(), env = { TYPESAFE_API_KEY: KEY }, consent = [OWNER], raterOpts = {}, rater } = {}) {
+async function world({ reply, fetcher = fakeTS(reply), complete = counted(), env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY }, consent = [OWNER], raterOpts = {}, rater } = {}) {
   let t = 0; const metrics = [];
   rater = rater === undefined ? R.storyRater(env, fetcher, raterOpts) : rater;
   const l = new Library(memorySql(), { now: () => new Date(Date.UTC(2026, 8, 29, 10, 0, 0, t++)).toISOString(), complete, rater, metric: (name, v) => metrics.push({ name, ...v }) });
@@ -102,7 +102,7 @@ test('constants: weights sum to 1, labels and fields fit the stored issue vocabu
 });
 
 test('R1 request contract: one request, the asked ids and types, pinned model, the notice, the exact headers, manual redirects', async () => {
-  const env = { TYPESAFE_API_KEY: KEY, JEV_MODEL: 'jev-latest' };
+  const env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY, JEV_MODEL: 'jev-latest' };
   const { l, fetcher } = await world({ env });
   const id = await saved(l);
   const r = await l.review(OWNER, id);
@@ -627,17 +627,17 @@ test('R15 budgets and the hedge: the deadline holds against a fetcher that ignor
   assert.deepEqual([q2.engine, q2.model, w.metrics.at(-1).hedged, w.metrics.at(-1).attempts], ['jev', 'jev-duplicate', 1, 2]);
   // Background: retry-after-ms (milliseconds) wins over retry-after (seconds); at most 3 attempts.
   const slept = [], fake = fakeTS(() => ({ status: 429, headers: { 'retry-after-ms': '800', 'retry-after': '5' } }));
-  const rater = R.storyRater({ TYPESAFE_API_KEY: KEY }, fake, { sleep: async ms => { slept.push(ms); } });
+  const rater = R.storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY }, fake, { sleep: async ms => { slept.push(ms); } });
   const asked = ['clarity'], body = JSON.stringify(R.requestBody({ reference: { story: {} }, notice: R.NOTICE }, asked));
   await assert.rejects(rater.rate(body, '{}', { asked, terms: [], budget: 'background' }), e => e.code === 'rate_limited' && e.meta.attempts === 3 && e.meta.http === 429);
   assert.deepEqual(slept, [800, 800]); assert.equal(fake.calls.length, 3);
   // retry-after in seconds, and a wait that does not fit the deadline stops the rating.
   let clock = 0; const slept2 = [], fake2 = fakeTS(() => ({ status: 529, headers: { 'retry-after': '5' } }));
-  const r2 = R.storyRater({ TYPESAFE_API_KEY: KEY }, fake2, { now: () => clock, sleep: async ms => { slept2.push(ms); clock += ms; } });
+  const r2 = R.storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY }, fake2, { now: () => clock, sleep: async ms => { slept2.push(ms); clock += ms; } });
   await assert.rejects(r2.rate(body, '{}', { asked, terms: [], budget: 'background' }), e => e.code === 'rate_limited' && e.meta.attempts === 2);
   assert.deepEqual(slept2, [5000]);
   // Exponential backoff with jitter when no header is sent: 500 ms, then 1,000 ms (random 0 means no jitter).
-  const slept3 = [], r3 = R.storyRater({ TYPESAFE_API_KEY: KEY }, fakeTS(() => ({ status: 500 })), { sleep: async ms => { slept3.push(ms); }, random: () => 1 });
+  const slept3 = [], r3 = R.storyRater({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY }, fakeTS(() => ({ status: 500 })), { sleep: async ms => { slept3.push(ms); }, random: () => 1 });
   await assert.rejects(r3.rate(body, '{}', { asked, terms: [], budget: 'background' }), e => e.code === 'server_error');
   assert.deepEqual(slept3, [375, 750], '0.5 s doubling, minus the full 25% jitter at random() = 1');
 });
@@ -850,14 +850,14 @@ test('R19 language and size: non-English never ready by JEV alone; long stories 
   assert.deepEqual([q.fallbackReason, q.engine, w.fetcher.calls.length], ['too_long', 'review-agent', 0]);
   assert.equal(w.metrics.at(-1).fallback, 9);
   const sources = Array.from({ length: 10 }, (_, i) => ({ name: 'Source ' + i, version: 'v1', excerpt: 'い'.repeat(600) }));
-  q = (await w.l.review(OWNER, await saved(w.l, { ...REF(), answers: ja(3800), sources }, OWNER, 'p2'))).state.quality;
+  q = (await w.l.review(OWNER, await saved(w.l, { ...REF(), answers: ja(2800), sources }, OWNER, 'p2'))).state.quality;
   assert.equal(q.engine, 'jev'); assert.equal(w.fetcher.calls.length, 1);
-  assert.deepEqual(w.fetcher.calls[0].body.state.reference.sources.map(s => s.excerpt), Array(10).fill(''));
+  assert.deepEqual(w.fetcher.calls[0].body.state.reference.sources.map(s => s.excerpt), Array(10).fill('い'.repeat(200)));
   assert.equal(R.estimateTokens('abcd'), 1); assert.equal(R.estimateTokens('ああ'), 2); assert.equal(R.estimateTokens('é'.repeat(8)), 2);
 });
 
 test('R20 old schema and idempotence: legacy rows are rated; a second Library rates again; no table is created', async () => {
-  const sql = memorySql(), fetcher = fakeTS(), env = { TYPESAFE_API_KEY: KEY };
+  const sql = memorySql(), fetcher = fakeTS(), env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: KEY };
   const l = new Library(sql, { complete: counted(), rater: R.storyRater(env, fetcher), metric: () => {} });
   await grant(l, OWNER);
   const a = await saved(l), b = await saved(l, { ...REF(), title: 'Second alias' }, OWNER, 'p2');
@@ -893,11 +893,11 @@ test('R21 the local fake answers pass parseAnswers and classify.parse; its modes
   assert.throws(() => fake.setMode('nope'), /mode/);
   // Through the library: ok mode rates a full story ready; unsure mode escalates it.
   fake.setMode('ok');
-  let w = await world({ fetcher: fake, env: { TYPESAFE_API_KEY: 'local-fake-key' } });
+  let w = await world({ fetcher: fake, env: { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'local-fake-key' } });
   let q = (await w.l.review(OWNER, await saved(w.l))).state.quality;
   assert.deepEqual([q.engine, q.status, q.holds, q.model], ['jev', 'ready', [], 'fake-jev-local']);
   fake.setMode('unsure');
-  w = await world({ fetcher: fake, env: { TYPESAFE_API_KEY: 'local-fake-key' }, complete: null });
+  w = await world({ fetcher: fake, env: { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'local-fake-key' }, complete: null });
   q = (await w.l.review(OWNER, await saved(w.l))).state.quality;
   assert.deepEqual([q.engine, q.status, q.score, q.jev.pessimisticScore], ['jev', 'needs_work', 84, 50]);
 });

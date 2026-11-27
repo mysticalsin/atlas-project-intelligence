@@ -8,6 +8,16 @@ import { Analyst, InterviewLedger } from './ledger.js';
 import { EnergyTurns, isEcho, Phrases, speakable } from './speech.js';
 import { EndMarker, parseReport, reportMessages } from './report.js';
 import { LANGUAGES, normalize, spokenFor, languageNote, GREETINGS, WELCOME_BACK, FILLERS, unfinished } from './languages.js';
+import { budgetRefused } from './meter.js';
+import { BUDGET_MESSAGE, budgetOutcome } from './budget-stop.js';
+
+const VOICE_FAILED = 'The voice reply failed. No fallback voice was used.';
+function ledgerStop(error) {
+  if (!budgetRefused(error)) return null;
+  const stop = budgetOutcome(error);
+  if (stop) return { message: stop.message, code: stop.code };
+  return { message: VOICE_FAILED, code: 'voice-unavailable' };
+}
 
 export const RESUME = '[The consultant made a sound but no words were recognised, and your last reply was cut off.] Briefly re-ask your last question in fresh words.';
 
@@ -294,7 +304,11 @@ export class Session {
     const id = ++this.checkId, d = this.turnDetector, snapshot = d.buffer.slice(), t0 = this.now();
     let verdict = null, timer, why = null;
     try { verdict = await Promise.race([this.ai.turnComplete(snapshot), new Promise(r => { timer = setTimeout(() => { why = { reason: 'timeout' }; r(null); }, 350); })]); }
-    catch (e) { verdict = null; why = { reason: 'error', name: e?.name || 'Error' }; } finally { clearTimeout(timer); }
+    catch (e) {
+      const stop = ledgerStop(e);
+      if (stop) { clearTimeout(timer); return this.fail(stop.message, stop.code); }
+      verdict = null; why = { reason: 'error', name: e?.name || 'Error' };
+    } finally { clearTimeout(timer); }
     // No verdict: say why (a name, never a message), so a turn model that always times out or fails shows in the logs.
     why = verdict ? {} : why || { reason: 'error', name: 'NoVerdict' };
     // Still the same pause? (new speech resets it, and an ended turn clears it)
@@ -343,10 +357,17 @@ export class Session {
     if (this.memory && !gap) { // private memory from earlier conversations, bounded so the greeting is never held up (none in gap mode)
       let timer;
       try { this.memoryNote = await Promise.race([this.memory(this.project), new Promise(r => { timer = setTimeout(() => r(''), 3500); })]) || ''; }
-      catch { this.memoryNote = ''; this.metric('memory_error', {}); }
+      catch (e) {
+        this.memoryNote = '';
+        const stop = budgetOutcome(e);
+        if (stop) { this.memoryStop = stop; this.metric('spend_cap', { reason: 'exhausted:usd' }); }
+        else this.metric('memory_error', {});
+      }
       finally { clearTimeout(timer); }
       if (this.finished || this.ending) return; // closed while recalling: no timer, no opening
-      this.event('memory', { status: this.memoryNote ? 'recalled' : 'empty', message: this.memoryNote ? 'ATLAS remembers your earlier conversations (private to you).' : 'No earlier conversations to recall.' });
+      this.event('memory', this.memoryStop
+        ? { status: 'budget_exhausted', message: this.memoryStop.message }
+        : { status: this.memoryNote ? 'recalled' : 'empty', message: this.memoryNote ? 'ATLAS remembers your earlier conversations (private to you).' : 'No earlier conversations to recall.' });
     }
     this.timer = setInterval(() => this.watch(), 1000);
     this.pace();
@@ -442,6 +463,8 @@ export class Session {
       text = (typeof heard === 'string' ? heard : heard?.text || '').trim(); heardIn = typeof heard === 'string' ? null : heard?.language || null;
       this.metric('stt', { ms: Math.round((this.now() - t0) * 1000), audio_ms: Math.round(pcm.length / 48), words: text ? text.split(/\s+/).length : 0 });
     } catch (e) {
+      const stop = ledgerStop(e);
+      if (stop) { this.metric('spend_cap', { reason: String(e.reason || 'refused').slice(0, 40) }); clearTimeout(timer); return this.fail(stop.message, stop.code); }
       // A failed (or hung) transcription counts as no words: whatever was waiting on it (a held answer, a re-ask) still happens.
       this.metric('stt_error', { name: e?.name || 'Error' }); this.event('quality_warning', { message: 'A speech segment could not be transcribed. Please repeat it or add it to your notes.' }); text = ''; heardIn = null;
     } finally { clearTimeout(timer); }
@@ -495,16 +518,17 @@ export class Session {
       const job = this.analyst.hear(ident, text).then(async result => {
         this.metric('analyst', { ms: Math.round((this.now() - a0) * 1000), ok: result.analyst_status === 'analysed' ? 1 : 0, details: result.candidate_details.length, rejected: result.rejected_proposals });
         if (this.mode === 'gap') return this.gapQuality(result);
-        let chosen = result.guidance;
+        let chosen = result.guidance, monthStop = result.analyst_status === 'budget_exhausted';
         if (this.ai.rankProbe && result.analyst_status === 'analysed') {
           const j0 = this.now();
           try { const better = await this.ai.rankProbe(result, chosen); this.metric('jev', { ms: Math.round((this.now() - j0) * 1000), override: better ? 1 : 0 }); if (better) chosen = better; }
-          catch (e) { this.metric('jev_error', { name: e?.name || 'Error' }); } // JEV unavailable: keep the ledger's own choice
+          catch (e) { this.metric('jev_error', { name: e?.name || 'Error' }); if (budgetOutcome(e)) monthStop = true; } // JEV unavailable: keep the ledger's own choice, and say so when the month stopped it
         }
         this.guidance = chosen;
         const { guidance, ...rest } = result;
         this.event('quality', rest);
-        if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
+        if (monthStop) this.event('quality_warning', { message: BUDGET_MESSAGE });
+        else if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
       }).catch(() => this.event('quality_warning', { message: 'This turn exceeded the transcript budget and was not added to the evidence ledger.' }));
       this.pending.add(job); job.finally(() => this.pending.delete(job));
     }
@@ -520,7 +544,7 @@ export class Session {
     const { guidance, ...rest } = result, statuses = this.gapStatuses(), g = gapGuidance(this.gapAsks, statuses);
     this.guidance = g;
     this.event('quality', { ...rest, next_field: g.field, next_question: g.question, planned_question: g.question, why_this_question: g.why, next_action: g.action, gap_status: statuses });
-    if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
+    if (result.analyst_status !== 'analysed') this.event('quality_warning', { message: result.analyst_status === 'budget_exhausted' ? BUDGET_MESSAGE : 'The evidence analyst did not respond for this turn. The answer is kept; review it in the notes.' });
   }
 
   // Reply to the consultant's latest turn. A thought left hanging (the turn model heard it unfinished, or the words
@@ -582,7 +606,12 @@ export class Session {
     this.replies += 1;
     const item = 'agent-' + this.replies, gen = ++this.gen;
     this.replyItem = item; this.replyTurn = turn; this.replyGen = gen;
-    const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => { this.metric('reply_error', { name: e?.name || 'Error' }); if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' }); });
+    const run = this.speak(item, gen, instruction, prefix || filler, !!filler, notBefore, endedAt, thinking).catch(e => {
+      this.metric('reply_error', { name: e?.name || 'Error' });
+      const stop = ledgerStop(e);
+      if (stop) return this.fail(stop.message, stop.code);
+      if (!this.finished && gen === this.gen) this.event('error', { message: 'The voice reply failed. No fallback voice was used.', code: 'voice-unavailable' });
+    });
     this.speaking = run;
     run.finally(() => { if (this.speaking === run) this.speaking = null; });
   }
@@ -627,7 +656,8 @@ export class Session {
       const text = speakable(piece); // markup is never voiced; the screen keeps it
       if (!text) return; // nothing to say: its text goes out with the next piece (or release())
       const synthesis = this.synth(text, lang, true); synthesis.catch(() => {}); // a failure surfaces where it is delivered
-      chain = chain.then(() => deliver(piece, synthesis)); chain.catch(() => {});
+      chain = chain.then(() => deliver(piece, synthesis));
+      chain.catch(e => { const stop = ledgerStop(e); if (stop) this.fail(stop.message, stop.code); });
       inflight.push(chain);
       while (inflight.length >= SYNTH_AHEAD) await inflight.shift();
     };
@@ -711,7 +741,12 @@ export class Session {
         const report = parseReport(await Promise.race([this.ai.report(reportMessages(this.history, this.ledger.notes(), this.ledger.stage)), timeout]));
         this.metric('report', { ms: Math.round((this.now() - t0) * 1000), ok: report ? 1 : 0, attempt });
         if (report) return report;
-      } catch (e) { this.metric('report_error', { name: e?.message === 'timeout' ? 'Timeout' : e?.name || 'Error', attempt }); if (e?.message === 'timeout') return null; }
+      } catch (e) {
+        const stop = budgetOutcome(e);
+        this.metric('report_error', { name: stop ? 'BudgetExhausted' : e?.message === 'timeout' ? 'Timeout' : e?.name || 'Error', attempt });
+        if (stop) { this.reportStop = stop; return null; }
+        if (e?.message === 'timeout') return null;
+      }
       finally { clearTimeout(timer); }
     }
     return null;
@@ -760,9 +795,9 @@ export class Session {
     }
   }
 
-  fail(message, code) {
+  fail(message, code, extra) {
     if (this.finished || this.ending) return;
-    this.event('error', { message, code });
+    this.event('error', extra ? { message, code, ...extra } : { message, code });
     return this.end(false);
   }
 
@@ -786,6 +821,7 @@ export class Session {
         const gap = this.mode === 'gap', report = gap ? null : await this.report();
         this.event('notes', { transcript: [...this.ledger.transcripts.values()].join('\n\n'), sections: this.ledger.notes(), status: 'candidate', report, mode: this.mode,
           ...(gap ? { gap: { requestId: this.gapRequest, results: this.gapResults() } } : {}),
+          ...(!report && this.reportStop ? { budgetMessage: this.reportStop.message } : {}),
           message: 'Unverified speech recognition and quote-linked candidate notes. Correct omissions and errors before adding to the project. The final cut-off utterance may be incomplete.' });
       } else if (clean) this.event('notes', { transcript: '', sections: null, status: 'not-enabled', mode: this.mode, message: 'Transcript capture was off. No consultant notes were stored.' });
       this.event('ended', { message: 'Microphone and voice service closed.' });

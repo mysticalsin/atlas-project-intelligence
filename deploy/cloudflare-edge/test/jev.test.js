@@ -41,7 +41,7 @@ test('ranker is off without a key and uses the TypeSafe endpoint with it', async
   assert.equal(jevRanker({}), null);
   const plan = planAfter([['problem', 'Tickets bounced between three teams'], ['contribution', 'I personally rebuilt the routing rules']]);
   const fields = candidates(plan);
-  const rank = jevRanker({ TYPESAFE_API_KEY: 'k' }, async (url, init) => {
+  const rank = jevRanker({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' }, async (url, init) => {
     assert.equal(url, 'https://api.typesafe.ai/v1/systemone'); assert.equal(init.headers.Authorization, 'Bearer k');
     return new Response(JSON.stringify({ answers: Object.fromEntries(fields.map((f, i) => [f, ans(i === 1 ? 3.6 : 1.2)])) }));
   });

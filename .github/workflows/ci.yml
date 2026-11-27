@@ -25,6 +25,10 @@ jobs:
         run: python deploy/cloudflare-edge/build_edge.py && git diff --exit-code -- deploy/cloudflare-edge/src/policy.generated.js
       - name: App unit tests
         run: node --test tests/*.test.js
+      - name: Edge test dependencies
+        run: |
+          pip install -r requirements-test.txt
+          npm ci --prefix deploy/cloudflare-edge
       - name: Edge unit tests
         run: cd deploy/cloudflare-edge && node --test test/*.test.js
       - name: Python tests (including the socket tests)
@@ -32,6 +36,6 @@ jobs:
       - name: Browser suites
         run: |
           python -m playwright install --with-deps chromium
-          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet report bids ask trust storyboard confirm wow_edge zero_config zero_config_edge jev_rating admin_metrics; do
+          for t in studio sculpture intelligence depth autosave orb_touch library reuse memory sheet report bids ask trust storyboard confirm wow_edge zero_config zero_config_edge jev_rating budget admin_metrics; do
             echo "::group::$t"; python tests/${t}_browser.py; echo "::endgroup::"
           done

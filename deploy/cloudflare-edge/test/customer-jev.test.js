@@ -45,7 +45,7 @@ function replay(replies) {
 for (const [name, c] of Object.entries(V.rank)) {
   test('parity: JevRanker.rank ' + name, async () => {
     const { calls, fetcher } = replay(c.replies), sleeps = [];
-    const rank = customerJev({ TYPESAFE_API_KEY: 'test-key', JEV_MODEL: 'jev-1.13.0' }, fetcher, { today: V.today, sleep: async ms => { sleeps.push(ms); } });
+    const rank = customerJev({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'test-key', JEV_MODEL: 'jev-1.13.0' }, fetcher, { today: V.today, sleep: async ms => { sleeps.push(ms); } });
     let got;
     try { const r = await rank(c.customer, c.stories); got = { ok: { rankings: r.rankings, method: r.method, rubric_version: r.rubricVersion, no_strong_match: r.noStrongMatch, recommended_ids: r.recommendedIds, threshold_status: r.thresholdStatus } }; }
     catch (e) { got = { error: e.message }; }
@@ -61,9 +61,9 @@ for (const [name, c] of Object.entries(V.rank)) {
 }
 
 test('off without a key; a present key never reaches the request body', async () => {
-  assert.equal(customerJev({}), null); assert.equal(customerJev({ TYPESAFE_API_KEY: '' }), null); assert.equal(customerJev(undefined), null);
+  assert.equal(customerJev({}), null); assert.equal(customerJev({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: '' }), null); assert.equal(customerJev(undefined), null);
   const { calls, fetcher } = replay([[200, { answers: {} }]]);
-  await assert.rejects(customerJev({ TYPESAFE_API_KEY: 'sk-secret' }, fetcher, { today: V.today })(V.rank.three_stories.customer, [V.rank.three_stories.stories[0]]), /Invalid JEV score/);
+  await assert.rejects(customerJev({ LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'sk-secret' }, fetcher, { today: V.today })(V.rank.three_stories.customer, [V.rank.three_stories.stories[0]]), /Invalid JEV score/);
   assert.doesNotMatch(calls[0].init.body, /sk-secret/);
 });
 

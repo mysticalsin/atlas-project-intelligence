@@ -100,7 +100,9 @@ async function renderAdmin(){const root=$('admin');if(!root)return;
    const cards=[['Events',m.events],['Errors',m.errors],['Actual tokens in',m.tokens.actualIn],['Missing token events',m.tokens.missing],['Unknown token events',m.tokens.unknown],['Latency avg ms',m.latencyMs.average??'missing'],['Published',m.workflow.published],['Awaiting manager',m.workflow.awaiting_manager],['Awaiting pre-sales',m.workflow.awaiting_presales],['Admin tests',m.workflow.admin_test]];
    for(const [k,v] of cards)grid.append(h('div',{class:'metric'},[h('span',{class:'tiny',text:k}),h('b',{text:String(v)})]));
    const cost=m.estimatedCost?`Estimated ${m.estimatedCost.amount} ${m.estimatedCost.currency} from configured unit rates${m.estimatedCost.includesEstimatedTokens?' (includes estimated tokens)':''}.`:'No cost figure. Unit rates are not configured, so this is not shown as zero.';
-   out.replaceChildren(grid,m.series.length?bars(m.series):h('p',{text:'No events in this range.'}),h('p',{text:cost}),h('p',{class:'tiny muted',text:m.note}));
+   const spend=m.spend||{}, mode=spend.mode||'enforce', over=spend.overruns&&spend.overruns.requests?` Overruns ${spend.overruns.requests}.`:'';
+   const spendLine=spend.available?`Ledger ${mode}. Month-to-date $${spend.usd}.${over}`:`Ledger ${mode}. Month-to-date spend was not read.`;
+   out.replaceChildren(grid,h('p',{text:spendLine}),m.series.length?bars(m.series):h('p',{text:'No events in this range.'}),h('p',{text:cost}),h('p',{class:'tiny muted',text:m.note}));
   }catch(e){const failed=noteAdmin(adminMetricsTransition(metricsView,{type:'load_failed'}));if(failed.ok)metricsView=failed.state;out.replaceChildren(banner('warn',e.message||'Metrics failed.'));}}
  go.addEventListener('click',load);exp.addEventListener('click',async()=>{
   const step=noteAdmin(adminMetricsTransition(metricsView,{type:'export'}));

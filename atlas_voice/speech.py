@@ -13,6 +13,8 @@ import json
 import math
 import re
 import struct
+from .limits import LIMITS, cap_pcm, cap_text
+from .spend import reserve, usage_from
 import unicodedata
 import wave
 
@@ -279,11 +281,20 @@ class WorkersSpeech:
             await self.queue.put(('audio', utterance))
 
     async def transcribe(self, pcm):
-        async with self.http.post(self.url(self.config.workers_stt_model), headers={**self.headers, 'Content-Type': 'audio/wav'},
-                                  params={'smart_format': 'true', 'punctuate': 'true', 'language': 'en'}, data=wav_bytes(pcm),
-                                  timeout=aiohttp.ClientTimeout(total=20)) as response:
-            response.raise_for_status()
-            data = await response.json()
+        pcm = cap_pcm(pcm, LIMITS['stt']['maxAudioMs'])
+        audio = wav_bytes(pcm)
+        width = int(LIMITS['pcmBytesPerMs'])
+        hold = await reserve({'kind': 'stt', 'provider': 'workers', 'model': self.config.workers_stt_model, 'audioMs': max(1, (len(pcm) + width - 1) // width)}, self.http)
+        try:
+            async with self.http.post(self.url(self.config.workers_stt_model), headers={**self.headers, 'Content-Type': 'audio/wav'},
+                                      params={'smart_format': 'true', 'punctuate': 'true', 'language': 'en'}, data=audio,
+                                      timeout=aiohttp.ClientTimeout(total=20)) as response:
+                response.raise_for_status()
+                data = await response.json()
+            await hold.settle(usage_from(data))
+        except Exception as error:
+            await hold.settle(error=type(error).__name__)
+            raise
         result = data.get('result', data)
         try:
             return result['results']['channels'][0]['alternatives'][0]['transcript'].strip()
@@ -291,14 +302,22 @@ class WorkersSpeech:
             return ''
 
     async def synthesize(self, text):
-        async with self.http.post(self.url(self.config.workers_tts_model), headers=self.headers,
-                                  json={'text': text, 'speaker': self.config.workers_voice, 'encoding': 'linear16',
-                                        'container': 'none', 'sample_rate': SAMPLE_RATE},
-                                  timeout=aiohttp.ClientTimeout(total=30)) as response:
-            response.raise_for_status()
-            if response.content_type == 'application/json':
-                raise ConnectionError('Speech synthesis returned an error document')
-            return await response.read()
+        text = cap_text(text, LIMITS['tts']['maxChars'])
+        hold = await reserve({'kind': 'tts', 'provider': 'workers', 'model': self.config.workers_tts_model, 'chars': max(1, len(text.encode('utf-8')))}, self.http)
+        try:
+            async with self.http.post(self.url(self.config.workers_tts_model), headers=self.headers,
+                                      json={'text': text, 'speaker': self.config.workers_voice, 'encoding': 'linear16',
+                                            'container': 'none', 'sample_rate': SAMPLE_RATE},
+                                      timeout=aiohttp.ClientTimeout(total=30)) as response:
+                response.raise_for_status()
+                if response.content_type == 'application/json':
+                    raise ConnectionError('Speech synthesis returned an error document')
+                audio = await response.read()
+            await hold.settle()
+            return audio
+        except Exception as error:
+            await hold.settle(error=type(error).__name__)
+            raise
 
     async def events(self):
         while True:

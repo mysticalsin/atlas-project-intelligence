@@ -7,6 +7,7 @@ import { Session } from './session.js';
 import { storyRater } from './rating.js';
 import { libraryRoutes } from './library-routes.js';
 import { hindsight, recallQuery, memoryNote, jevRelevant } from './memory.js';
+import { budgetOutcome } from './budget-stop.js';
 import { memoryRoutes } from './memory-routes.js';
 import { resolveForInterview } from './gaps.js';
 import { fetchWinHint } from './winloop.js';
@@ -15,6 +16,20 @@ import { openDurableLibrary } from './library-store.js';
 import { limitRoute } from './ratelimit.js';
 import { loadState, memoryAllowed, recordConsent } from './privacy.js';
 import { auditKey } from './audit-chain.js';
+import { ProductionSpendLedger as LedgerCore } from './meter.js';
+
+// The pure ledger stays free of cloudflare:workers so the Node tests can construct it.
+// This subclass is what wrangler binds, and it is what RPC requires.
+export class ProductionSpendLedger extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.core = new LedgerCore(ctx, env);
+  }
+  reserve(req) { return this.core.reserve(req); }
+  record(req) { return this.core.record(req); }
+  settle(id, observed) { return this.core.settle(id, observed); }
+  snapshot() { return this.core.snapshot(); }
+}
 
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p), log: line => console.log(line) }),
@@ -44,7 +59,8 @@ export class Interview extends DurableObject {
     const memory = this.hs && bank && memoryAllowed(consent) && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
       const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
       const n = found.length; let checked = 0;
-      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
+      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; }
+      catch (e) { if (budgetOutcome(e) || e?.name === 'BudgetRefused') throw e; metric('memory_jev_error', {}); }
       metric('memory_recall', { ms: Date.now() - t0, found: n, kept: found.length, jev_checked: checked });
       return memoryNote(found);
     } : null;

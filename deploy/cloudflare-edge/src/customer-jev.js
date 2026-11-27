@@ -5,6 +5,7 @@
 // threshold and the weights are uncalibrated pilot values.
 // One deliberate difference: jev.py refuses a story without `eligible: true`; here the caller has already limited
 // the stories to published references the user may see, and the story shape of §F1.5 carries no such flag.
+import { paid, TYPESAFE_ENDPOINT, boundedJevBody } from './meter.js';
 export const RUBRIC_VERSION = 'customer-value-v1';
 export const DIMENSIONS = {
   problem_fit: ['Does the story address this customer problem and business stakes?', 0.30],
@@ -15,7 +16,7 @@ export const DIMENSIONS = {
 };
 export const LEVELS = ['No relevant support or missing context', 'Weak or indirect match', 'Partial match with material caveats', 'Strong supported match', 'Direct supported match with transferable conditions'];
 export const REVIEW_THRESHOLD = 0.70;
-const ENDPOINT = 'https://api.typesafe.ai/v1/systemone', BODY_MAX = 65000, TIMEOUT_MS = 18000;
+const ENDPOINT = TYPESAFE_ENDPOINT, TIMEOUT_MS = 18000;
 const CUSTOMER_KEYS = ['problem', 'buyer', 'constraints', 'desired_outcome'];
 const SCOPED = ['id', 'title', 'revision', 'content_hash', 'sections', 'sources', 'tags', 'stage', 'kind'];
 const NOTICE = 'Model-estimated relevance, not probability of customer success. Weights are proposed and uncalibrated.';
@@ -109,7 +110,7 @@ export function shortlist(stories, customer, limit = 12) {
 
 // customerJev(env, fetcher) -> null without a key, else async (customer, stories) -> { rankings, noStrongMatch,
 // recommendedIds, method, rubricVersion, thresholdStatus }. Transport: POST, redirect 'manual', 18 s per attempt,
-// body <= 65,000 bytes, retry on 429/529 at most twice. Any failure throws; the caller falls back and says so.
+// body at most the published 64,000-token context (one token per byte), retry on 429/529 at most twice. Any failure throws; the caller falls back and says so.
 export function customerJev(env, fetcher = fetch, { today, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
   if (!env?.TYPESAFE_API_KEY) return null;
   const key = env.TYPESAFE_API_KEY, model = env.JEV_MODEL || 'jev-1.13.0';
@@ -122,11 +123,10 @@ export function customerJev(env, fetcher = fetch, { today, sleep = ms => new Pro
     const result = [];
     for (const story of stories) {
       const scoped = Object.fromEntries(SCOPED.filter(k => Object.hasOwn(story, k)).map(k => [k, story[k]])); // the reviewed narrative and source metadata only
-      const freshness = sourceFreshness(story, today), body = JSON.stringify(requestBody(scoped, customer, model, true));
-      if (new TextEncoder().encode(body).length > BODY_MAX) throw new Error('Story exceeds ranking context budget; prepare a reviewed shorter variant');
+      const freshness = sourceFreshness(story, today), body = boundedJevBody(JSON.stringify(requestBody(scoped, customer, model, true)));
       let scored = null;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const r = await fetcher(ENDPOINT, { method: 'POST', redirect: 'manual', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const r = await paid(env).fetch(() => ({ kind: 'jev', provider: 'typesafe', requests: 1 }), fetcher, ENDPOINT, { method: 'POST', redirect: 'manual', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(TIMEOUT_MS) });
         if ((r.status === 429 || r.status === 529) && attempt < 2) { await sleep(400 * 2 ** attempt); continue; }
         if (r.status !== 200) throw new Error('JEV unavailable; do not reuse a stale or synthetic rank');
         scored = parseResult(await r.json(), freshness);

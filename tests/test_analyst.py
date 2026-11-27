@@ -85,7 +85,8 @@ def test_chat_completer_request_shape_and_parsing():
     url,headers,body=http.sent
     assert calls==[{'id':'t1','name':'record_details','arguments':'{"details":[]}'}]
     assert headers=={'Authorization':'Bearer SERVER-KEY'} and body['temperature']==0 and body['tools']==CHAT_TOOLS
-    assert [t['function']['name'] for t in body['tools']]==['record_details'] and body['max_tokens']<=800
+    from atlas_voice.limits import output_tokens
+    assert [t['function']['name'] for t in body['tools']]==['record_details'] and body['max_tokens']==output_tokens('gatewayAnalyst')
     assert run(chat_completer(FakeHttp({'choices':[{'message':{'content':'nothing'}}]}),'https://x.example.com/v1','m')([]))==[]
 
 def test_analyst_config_validation():

@@ -5,6 +5,7 @@ import { queryMetrics, recordUsage, purgeTelemetry, ensureTelemetry, personaKey,
 import { toCsv } from './csvsafe.js';
 import { journeyView, saveJourney, mapDraft, ensureJourney, journeyMatches, journeyTenant, journeyExport, omittedRow, JOURNEY_COUNT_SQL, JOURNEY_DELETE_SQL } from './journey.js';
 import { deleteOwnedProfile, ensure as ensureProfile, profileSelection } from './profile.js';
+import { ledgerMode, PRODUCTION_LEDGER_NAME } from './meter.js';
 import { placeholders, readChunks, writeChunks, withTransaction } from './sql-bound.js';
 import { readPublication } from './publication.js';
 
@@ -25,6 +26,17 @@ function dsarStores() {
     complete: false,
   };
 }
+export async function monthSpend(env) {
+  const mode = ledgerMode(env);
+  const ns = env?.SPEND_LEDGER;
+  if (!ns || typeof ns.get !== 'function' || typeof ns.idFromName !== 'function') return { mode, available: false };
+  try {
+    const snap = await ns.get(ns.idFromName(PRODUCTION_LEDGER_NAME)).snapshot();
+    if (!snap || typeof snap.reserved?.usd !== 'number') return { mode, available: false, overruns: snap?.overruns || { requests: 0, nanoUsd: 0 } };
+    return { mode, available: true, usd: snap.reserved.usd, month: snap.month || '', overruns: snap.overruns || { requests: 0, nanoUsd: 0 } };
+  } catch { return { mode, available: false }; }
+}
+
 const tableReady = (lib, name) => lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", name).length > 0;
 const erasureToken = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => b.toString(16).padStart(2, '0')).join('');
 function tokenOf(ctx) {
@@ -158,7 +170,9 @@ export async function adminRoutes(ctx) {
   const action = parts[1] || '';
   if (method === 'GET' && action === 'metrics') {
     const q = url?.searchParams || new URLSearchParams();
-    return { body: queryMetrics(lib, user, env, metricQuery(url, q.get('bucket') || 'day')) };
+    const body = queryMetrics(lib, user, env, metricQuery(url, q.get('bucket') || 'day'));
+    body.spend = await monthSpend(env);
+    return { body };
   }
   if (method === 'GET' && action === 'export') {
     const metrics = queryMetrics(lib, user, env, metricQuery(url, 'day'));

@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlencode
@@ -51,7 +52,10 @@ def same_origin(request, config):
     return request.headers.get('Origin') == config.origin
 
 
-def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes):
+def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes, ledger_check=True):
+    if ledger_check:
+        from .spend import require_ledger
+        require_ledger()
     config = (config or Config.env()).validate()
     identity = Identity(config)
     memory = memory_factory(config)
@@ -103,6 +107,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
     async def startup(app):
         app['http'] = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, connect=10),
                                            trust_env=False)
+        memory.session = app['http']
 
     async def cleanup(app):
         for ws in list(active.values()):
@@ -391,6 +396,7 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
         # Release the voice worker before optional transcription. Do not fabricate input text
         # from PersonaPlex's agent-only text stream. All raw bytes remain in RAM, not a file.
+        from .spend import BudgetRefused
         try:
             if clean_end and capture and pcm and not ws.closed:
                 await event('status', state='transcribing', message='Voice stopped. Preparing a consultant transcript for your review.')
@@ -400,6 +406,13 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             elif clean_end:
                 await event('notes', transcript='', sections=None, status='not-configured',
                             message='Voice interview ended. Consultant transcription was not enabled; no consultant words were invented.')
+        except BudgetRefused as refused:
+            from .spend import refusal_event
+            if refused.reason == 'unpriced':
+                note_message, note_code = 'Transcription is not priced, so it was not sent.', refused.code
+            else:
+                note_message, note_code = refusal_event(refused)
+            await event('notes', transcript='', sections=None, status='refused', code=note_code, message=note_message)
         except Exception:
             await event('notes', transcript='', sections=None, status='failed',
                         message='Transcription did not complete. No transcript or project notes are claimed.')
@@ -423,6 +436,12 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
 
 
 def main():
+    from .spend import LedgerConfigError, require_ledger
+    try:
+        require_ledger()
+    except LedgerConfigError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(1) from error
     config = Config.env()
     print(f'ATLAS voice gateway: {config.origin}  |  authentication: {config.auth_mode}')
     print('No model inference is claimed until a PersonaPlex session handshake and audio are received.')

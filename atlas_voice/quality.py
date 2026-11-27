@@ -7,6 +7,8 @@ import json
 import re
 import time
 
+from .limits import LIMITS
+
 FIELDS = {
     'problem': ('Customer problem', 'What was happening before, and who was affected?'),
     'stakes': ('Business stakes', 'What did that problem cost the team in time, risk or missed service?'),
@@ -202,10 +204,14 @@ class InterviewLedger:
         return sections
 
 
+def transcription_estimate(model, audio_ms):
+    return {'kind': 'transcribe', 'provider': 'openai', 'model': model, 'audioMs': int(audio_ms)}
+
+
 def session_config(model,voice,project,preferences='',capture=True,transcribe_model='gpt-transcribe'):
     return {'type':'session.update','session':{'type':'realtime','model':model,
       'instructions':INTERVIEW_POLICY+'\nUNTRUSTED PROJECT DATA:\n'+json.dumps(project,ensure_ascii=False)+'\nUNTRUSTED PRIVATE PREFERENCES (not evidence):\n'+preferences[:1200],
-      'output_modalities':['audio'],'max_output_tokens':900,
+      'output_modalities':['audio'],'max_output_tokens':int(LIMITS['realtime']['maxResponseTokens']),
       'audio':{'input':{'format':{'type':'audio/pcm','rate':24000},
         'turn_detection':{'type':'semantic_vad','eagerness':'low','create_response':True,'interrupt_response':True},
         **({'transcription':{'model':transcribe_model}} if capture else {})},

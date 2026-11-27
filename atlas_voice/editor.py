@@ -8,6 +8,8 @@ import json
 import os
 import re
 import aiohttp
+from .limits import input_tokens, output_tokens
+from .spend import reserve, usage_from
 from .wiki import SECTIONS, clean_story, compact
 
 EDITOR_VERSION = 'evidence-editor-v1'
@@ -85,19 +87,27 @@ class StoryEditor:
         context={'title':story['title'],'stage':story['stage'],'kind':story['kind'],'audience':story['audience'],
                  'objective':objective,'references':references(story)}
         if len(compact(context))>60000:raise ValueError('Editorial context too large; prepare a narrower source-backed variant')
+        cap = output_tokens('editor')
         body={'model':self.model,'messages':[{'role':'system','content':POLICY},
                 {'role':'user','content':compact(context)}],
               'response_format':{'type':'json_schema','json_schema':{'name':'atlas_grounded_story','strict':True,'schema':SCHEMA}},
-              'max_completion_tokens':4500,'store':False}
-        async with self.session.post('https://api.openai.com/v1/chat/completions',json=body,
-                headers={'Authorization':'Bearer '+self.key},timeout=aiohttp.ClientTimeout(total=40),allow_redirects=False) as response:
-            if response.status!=200:raise RuntimeError('Editor provider did not confirm a valid response')
-            parts=[];size=0
-            async for chunk in response.content.iter_chunked(8192):
-                size+=len(chunk)
-                if size>160000:raise RuntimeError('Editor response exceeded the budget')
-                parts.append(chunk)
-            payload=json.loads(b''.join(parts))
+              'max_completion_tokens':cap,'store':False}
+        hold = await reserve({'kind': 'editor', 'provider': 'openai', 'model': self.model,
+                              'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': cap}, self.session)
+        try:
+            async with self.session.post('https://api.openai.com/v1/chat/completions',json=body,
+                    headers={'Authorization':'Bearer '+self.key},timeout=aiohttp.ClientTimeout(total=40),allow_redirects=False) as response:
+                if response.status!=200:raise RuntimeError('Editor provider did not confirm a valid response')
+                parts=[];size=0
+                async for chunk in response.content.iter_chunked(8192):
+                    size+=len(chunk)
+                    if size>160000:raise RuntimeError('Editor response exceeded the budget')
+                    parts.append(chunk)
+                payload=json.loads(b''.join(parts))
+            await hold.settle(usage_from(payload))
+        except Exception as error:
+            await hold.settle(error=type(error).__name__)
+            raise
         choices=payload.get('choices') if isinstance(payload,dict) else None
         if not isinstance(choices,list) or not choices or not isinstance(choices[0],dict):raise RuntimeError('Editor response has no valid choice')
         choice=choices[0]

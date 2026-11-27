@@ -258,7 +258,7 @@ test('coverage and suggested people: names and roles only, reference order, pers
 
 test('F1.9 #1 leak: create, match (Workers AI and JEV) and one-pager send no prospect, library client, email, phone or URL to any model', async () => {
   const jevReply = () => new Response(JSON.stringify({ model: 'jev', answers: Object.fromEntries(['problem_fit', 'transferability', 'evidence', 'decision_value'].map(k => [k, { type: 'score', score: 3.5, confidence: 0.9, probabilities: { 0: 0, 1: 0, 2: 0, 3: 0.5, 4: 0.5 } }])) }), { status: 200 });
-  const w = await library({ jev: async () => jevReply() }), { l, seen } = w, env = { TYPESAFE_API_KEY: 'k' };
+  const w = await library({ jev: async () => jevReply() }), { l, seen } = w, env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' };
   const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
   await call(l, OWNER, 'POST', `bids/${bid.id}/requirements`, { requirements: [...bid.requirements, { text: 'Name Zebracorp and Acme Prospect, jane@acme.example, +33 6 12 34 56 78', kind: 'capability', must: false }] });
   const viaJev = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, env)).body;
@@ -296,7 +296,7 @@ test('F1.9 #2 no oracle: the author reads their own words everywhere they typed 
 test('F1.9 #3 record masking: another library client named inside a record never reaches BID_RANK, ONEPAGER or JEV, nor any footnote', async () => {
   const w = await library({ jev: async () => new Response('{}', { status: 500 }) }), { l, seen } = w;
   const bid = (await call(l, OWNER, 'POST', 'bids', { ...NEW_BID, briefText: BRIEF.replace('Zebracorp', 'a peer insurer') })).body;
-  const out = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, { TYPESAFE_API_KEY: 'k' })).body;
+  const out = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' })).body;
   assert.match(out.method, /model ranking \(JEV failed; fell back to Workers AI\)$/, 'any JEV error falls back and says so');
   const pager = (await call(l, OWNER, 'POST', `bids/${bid.id}/onepager`, { refIds: [w.b] })).body;
   const inputs = [...seen.complete, ...seen.fetch];
@@ -400,7 +400,7 @@ test('JEV: only with consent and a key; fit classes give the verdict; coverage u
   const replies = { hi: [3.9, 3.8, 3.5, 3.5], lo: [3.1, 3.1, 3.0, 3.0] };
   const w = await library({ jev: async (url, init) => { const t = JSON.parse(init.body).state.eligible_story.title, s = t === 'Claims triage alias' ? replies.hi : replies.lo;
     return new Response(JSON.stringify({ answers: Object.fromEntries(['problem_fit', 'transferability', 'evidence', 'decision_value'].map((k, i) => [k, score(s[i])])) }), { status: 200 }); } });
-  const { l, seen } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body, env = { TYPESAFE_API_KEY: 'k' };
+  const { l, seen } = w, bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body, env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' };
   for (const body of [{ useJev: true }, { jevConsent: true }, { useJev: 'true', jevConsent: 'true' }]) assert.doesNotMatch((await call(l, OWNER, 'POST', `bids/${bid.id}/match`, body, env)).body.method, /JEV/);
   assert.doesNotMatch((await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, {})).body.method, /JEV/, 'no key: never JEV');
   assert.equal(seen.fetch.length, 0, 'no consent or no key: nothing sent to TypeSafe');
@@ -547,7 +547,7 @@ test('review #17 delete: open gap requests close, answer maps and the brief-deri
 
 test('review #21 JEV: an empty customer field is named and JEV is not called; "JEV failed" stays for real failures', async () => {
   const fields = { problem: 'A regional insurer has slow claims triage.', buyer: '', constraints: 'Within twelve months.', desired_outcome: 'Faster payouts.' };
-  const w = await library({ jev: async () => { throw new Error('JEV must not be called'); } }), { l, seen } = w, env = { TYPESAFE_API_KEY: 'k' };
+  const w = await library({ jev: async () => { throw new Error('JEV must not be called'); } }), { l, seen } = w, env = { LEDGER_MODE: 'off', TYPESAFE_API_KEY: 'k' };
   const bid = (await call(l, OWNER, 'POST', 'bids', NEW_BID)).body;
   sqlOf(l).exec('UPDATE bids SET customer = ? WHERE id = ?', JSON.stringify(fields), bid.id);
   const out = (await call(l, OWNER, 'POST', `bids/${bid.id}/match`, { useJev: true, jevConsent: true }, env)).body;

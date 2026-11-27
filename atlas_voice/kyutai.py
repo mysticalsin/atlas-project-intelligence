@@ -8,11 +8,15 @@ Protocol (verified against unmute/kyutai_constants.py, stt/speech_to_text.py, tt
 - TTS  /api/tts_streaming?format=PcmMessagePack&voice=...  send {"type":"Text","text"}, {"type":"Eos"};
   receive Ready, Audio{pcm}, Text{text,start_s,stop_s}, Error{message}.
 """
+import asyncio
 import json
 import struct
 from urllib.parse import quote
 
 import aiohttp
+
+from .limits import input_tokens, output_tokens
+from .spend import BudgetRefused, reserve, usage_from
 import msgpack
 
 SAMPLE_RATE = 24000
@@ -92,27 +96,60 @@ def connect_tts(http, base, key, voice):
     return connect(http, base, TTS_PATH, key, '?format=PcmMessagePack&cfg_alpha=1.5&voice=' + quote(voice, safe=''))
 
 
-async def stream_chat(http, url, model, key, messages, max_tokens=300):
+async def _settle_stream(hold, usage, error=None):
+    try:
+        await hold.settle(usage, error=error)
+    except BudgetRefused as refused:
+        print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': refused.reason}), flush=True)
+        raise
+
+
+async def stream_chat(http, url, model, key, messages, max_tokens=None):
     """Yield text deltas from an OpenAI-compatible streaming chat completion (SSE)."""
     headers = {'Authorization': 'Bearer ' + key} if key else {}
-    async with http.post(url, headers=headers, json={'model': model, 'messages': messages, 'stream': True,
-                                                     'temperature': 0.6, 'max_tokens': max_tokens},
-                         timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
-        response.raise_for_status()
-        buffer = b''
-        async for chunk in response.content.iter_any():
-            buffer += chunk
-            while b'\n' in buffer:
-                line, buffer = buffer.split(b'\n', 1)
-                line = line.strip()
-                if not line.startswith(b'data:'):
-                    continue
-                payload = line[5:].strip()
-                if payload == b'[DONE]':
-                    return
-                try:
-                    delta = json.loads(payload)['choices'][0].get('delta', {}).get('content') or ''
-                except (ValueError, KeyError, IndexError, TypeError):
-                    continue
-                if delta:
-                    yield delta
+    cap = output_tokens('talker')
+    max_tokens = cap if max_tokens is None else min(int(max_tokens), cap)
+    body = {'model': model, 'messages': messages, 'stream': True, 'temperature': 0.6, 'max_tokens': max_tokens}
+    hold = await reserve({'kind': 'talker', 'provider': 'openai', 'model': model,
+                          'inputTokens': input_tokens(json.dumps(body)), 'outputTokens': max_tokens}, http)
+    seen = None
+    try:
+        async with http.post(url, headers=headers, json=body,
+                             timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
+            response.raise_for_status()
+            buffer = b''
+            async for chunk in response.content.iter_any():
+                buffer += chunk
+                while b'\n' in buffer:
+                    line, buffer = buffer.split(b'\n', 1)
+                    line = line.strip()
+                    if not line.startswith(b'data:'):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == b'[DONE]':
+                        return
+                    try:
+                        parsed = json.loads(payload)
+                    except ValueError:
+                        continue
+                    found = usage_from(parsed)
+                    if found:
+                        seen = found
+                    try:
+                        delta = parsed['choices'][0].get('delta', {}).get('content') or ''
+                    except (KeyError, IndexError, TypeError):
+                        continue
+                    if delta:
+                        yield delta
+    except asyncio.CancelledError:
+        try:
+            await _settle_stream(hold, seen)
+        except BudgetRefused as refused:
+            hold.settle_error = refused.reason
+            print(json.dumps({'atlas_metric': 'ledger', 'error': 'settle', 'reason': refused.reason, 'recorded': 'cancel'}), flush=True)
+        raise
+    except Exception as error:
+        await _settle_stream(hold, seen, error=type(error).__name__)
+        raise
+    finally:
+        await _settle_stream(hold, seen)

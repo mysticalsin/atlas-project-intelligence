@@ -15,6 +15,11 @@ import { CONFIRM_HTML } from './confirm-page.js';
 import { nameClaims, pushConfig } from './profile.js';
 import { elevatedRole, privilegeReadiness, productionDemoConflict, TENANT_ID, tenantEnforced, tenantOf, tokenRoles } from './authz.js';
 import { acceptedSubjectDelete } from './library-routes.js';
+import { paid, elevenLabsUrl, utf8Length, analystCall, LIMITS, generationTokens, inputTokenCeiling, capPcm, capText, markdownPlan, ledgerMode } from './meter.js';
+import { usageFrom } from './usage.js';
+import { httpBudget } from './budget-stop.js';
+import { audioMs } from './units.js';
+import { ledgerAccessOk, spendRoute } from './spend-route.js';
 import { cspMode, htmlCspHeaders, inlineScriptHashes, runtimeBlock, withoutMetaCsp, PAGE_SCRIPT_HASHES } from './csp.js';
 import { RETENTION } from './policy.generated.js';
 import { baseSecurityHeaders, DATA_CSP, secure } from './security-headers.js';
@@ -251,6 +256,16 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
     // Teams bot endpoint and launcher tab (pre-Access, like /api/triggers): exactly these two; every other
     // /api/teams/* path falls through to the signed-in handling. BLOCKED_EXTERNAL until Teams is connected.
     if ((url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET')) return teamsRoutes(request, env, { waitUntil });
+    if (url.pathname === '/api/ledger/reserve' || url.pathname === '/api/ledger/settle' || url.pathname === '/api/ledger/record') {
+      // Cloudflare Access is in front of this host when ACCESS_AUD is set. The bearer is the existing
+      // ATLAS_LEDGER_TOKEN. A service token, when the operator has already issued one, is the existing
+      // Access client id and secret. This route does not mint a second token. A live Access check is not run here.
+      if (env.ACCESS_AUD && !(await ledgerAccessOk(request, env, verifyAccess))) {
+        return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+      }
+      const spent = await spendRoute(request, env);
+      if (spent) return spent;
+    }
     // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
@@ -391,8 +406,17 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const sheetHeaders = new Headers(request.headers); sheetHeaders.delete('content-length');
       const sheetRequest = new Request(request.url, { method: 'POST', headers: sheetHeaders, body: sheetBytes });
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
-      const ai = workersAI(env), res = await sheetRoutes(sheetRequest, sheetPath, { complete: (m, n) => ai.complete(m, n),
-        toMarkdown: f => env.AI.toMarkdown(f, { conversionOptions: { pdf: { metadata: false } } }) });
+      const ai = workersAI(env), res = await sheetRoutes(sheetRequest, sheetPath, { complete: (m, spec) => ai.complete(m, spec),
+        toMarkdown: async f => {
+          assertAiOn(env);
+          const one = Array.isArray(f) ? f[0] : f;
+          const buf = one?.blob && typeof one.blob.arrayBuffer === 'function' ? new Uint8Array(await one.blob.arrayBuffer()) : new Uint8Array(0);
+          const plan = markdownPlan(buf, one?.name || '', one?.blob?.type || one?.type || '');
+          // Off has no paid upstream, so the local stand-in may describe an image. Enforce and observe never call detr-resnet-50.
+          if (!plan.ok && plan.code === 'unpriced_model' && ledgerMode(env) === 'off') return paid(env).toMarkdown(() => ({ kind: 'markdown', media: 'image', files: 1 }), one, { conversionOptions: { pdf: { metadata: false } } });
+          if (!plan.ok) throw Object.assign(new Error(plan.error), { status: plan.status || 413, code: plan.code });
+          return paid(env).toMarkdown(() => ({ kind: 'markdown', files: plan.estimate.files, media: plan.estimate.media }), one, { conversionOptions: { pdf: { metadata: false } } });
+        } });
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
@@ -442,7 +466,13 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
       const t0 = Date.now(), metric = values => console.log(JSON.stringify({ atlas_metric: 'transcribe', ms: Date.now() - t0, bytes: pcm.length, ...values }));
       let out;
-      try { out = await workersAI(env).transcribe(pcm); } catch { metric({ failed: 1 }); return json(env, { error: 'Transcription failed. Type the question instead.' }, 502); }
+      try { out = await workersAI(env).transcribe(pcm); }
+      catch (e) {
+        metric({ failed: 1 });
+        const stopped = httpBudget(e);
+        if (stopped) return json(env, stopped.body, stopped.status);
+        return json(env, { error: 'Transcription failed. Type the question instead.' }, 502);
+      }
       metric({});
       return json(env, { text: String(out?.text || '').slice(0, 600), language: out?.language || null });
     }
@@ -457,7 +487,11 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       try { projectState(project); } catch (e) { return json(env, { error: e.message }, e.status || 400); }
       const limited = await spend('classify', limitOf(env, 'CLASSIFY_HOUR')); if (limited) return limited;
       try { return json(env, await classify(env, project)); }
-      catch (e) { return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502); }
+      catch (e) {
+        const stopped = httpBudget(e);
+        if (stopped) return json(env, stopped.body, stopped.status);
+        return e.status ? json(env, { error: e.message }, e.status) : json(env, { error: 'Scoring is unavailable right now. Try again shortly.' }, 502);
+      }
     }
     if (url.pathname === '/api/test-voice' && env.TEST_VOICE === '1' && request.method === 'GET') {
       // Test-only (off unless TEST_VOICE=1, and still behind Access): synthesizes a scripted consultant line
@@ -519,17 +553,22 @@ export function responseToolCalls(r) {
   if (Array.isArray(r?.output)) return r.output.filter(o => o?.type === 'function_call').map((c, i) => ({ id: c.call_id || c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
   return (r?.tool_calls || []).map((c, i) => ({ id: c.id || 'call-' + i, name: c.name, arguments: args(c.arguments) }));
 }
-// Low reasoning effort keeps the hidden reasoning from eating the output budget; retried without it if the binding rejects the field.
-async function runReasoning(env, input) {
-  try { return await env.AI.run(env.ANALYST_MODEL, { ...input, reasoning: { effort: 'low' } }); }
-  catch { return env.AI.run(env.ANALYST_MODEL, input); }
+// Low reasoning effort keeps the hidden reasoning from eating the output budget. Each attempt reserves on its
+// own. A ledger refusal is not a rejected field and is not retried.
+async function runReasoning(env, input, spec) {
+  const cap = generationTokens(spec);
+  const sent = { ...input, max_tokens: cap };
+  const estimate = () => ({ kind: 'analyst', model: env.ANALYST_MODEL,
+    inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(sent))), outputTokens: cap });
+  return analystCall(env, estimate, sent);
 }
 
 // ElevenLabs Flash v2.5 (32 languages) as raw 24 kHz PCM, the same format as Aura. Optional: ELEVENLABS_API_KEY.
 async function elevenLabs(env, text, lang, fetcher = fetch) {
+  const spoken = capText(text, LIMITS.tts.maxChars);
   const voice = encodeURIComponent(env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM');
-  const r = await fetcher(`https://api.elevenlabs.io/v1/text-to-speech/${voice}?output_format=pcm_24000`, { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
-    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
+  const r = await paid(env).fetch(() => ({ kind: 'tts', provider: 'elevenlabs', chars: utf8Length(spoken) }), fetcher, elevenLabsUrl(voice), { method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(15000),
+    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: spoken, model_id: env.ELEVENLABS_MODEL || 'eleven_flash_v2_5', language_code: lang }) });
   if (!r.ok) throw new Error('ElevenLabs HTTP ' + r.status);
   const pcm = new Uint8Array(await r.arrayBuffer());
   return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
@@ -539,68 +578,96 @@ export function workersAI(env) {
   const bytesOf = async r => r instanceof Uint8Array ? r : r instanceof ArrayBuffer ? new Uint8Array(r)
     : r instanceof ReadableStream || r instanceof Response ? new Uint8Array(await new Response(r.body ?? r).arrayBuffer())
     : r?.audio ? Uint8Array.from(atob(r.audio), c => c.charCodeAt(0)) : new Uint8Array(0);
+  const meter = paid(env);
   return {
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
       assertAiOn(env);
-      const r = await env.AI.run(env.STT_MODEL, { audio: { body: new Blob([wav(pcm)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
+      const audio = capPcm(pcm, LIMITS.stt.maxAudioMs);
+      const r = await meter.run(() => ({ kind: 'stt', model: env.STT_MODEL, audioMs: audioMs(audio) }), env.STT_MODEL, { audio: { body: new Blob([wav(audio)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
     },
     // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
     // Sent as a base64 WAV string: the binding rejects the streamed {body, contentType} form for this model (AiError).
     async turnComplete(pcm) {
       assertAiOn(env);
-      const tail = pcm.length > 8 * 48000 ? pcm.subarray(pcm.length - 8 * 48000) : pcm, bytes = wav(to16k(tail), 16000);
+      const tail = capPcm(pcm, LIMITS.turn.maxAudioMs), bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const r = await env.AI.run(env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', { audio: btoa(bin) });
+      const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
       // No boolean verdict is no verdict (the session logs it as NoVerdict and uses the silence rule), never "unfinished".
       return typeof r?.is_complete === 'boolean' ? { complete: r.is_complete, probability: Number(r.probability) || 0 } : null;
     },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
       assertAiOn(env);
-      if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, text, lang);
-      const es = lang === 'es';
-      const pcm = await bytesOf(await env.AI.run(es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL, { text, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
+      const spoken = capText(text, LIMITS.tts.maxChars);
+      if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, spoken, lang);
+      const es = lang === 'es', model = es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL;
+      const pcm = await bytesOf(await meter.run(() => ({ kind: 'tts', model, lang: es ? 'es' : 'en', chars: utf8Length(spoken) }), model, { text: spoken, speaker: es ? (env.TTS_VOICE_ES || 'celeste') : speaker === 'atlas' ? env.TTS_VOICE : speaker, encoding: 'linear16', container: 'none', sample_rate: 24000 }));
       return pcm.length % 2 ? pcm.subarray(0, pcm.length - 1) : pcm;
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
     async *chatStream(messages, { affinity } = {}) {
       assertAiOn(env);
-      const stream = await env.AI.run(env.TALKER_MODEL, { messages, stream: true, max_tokens: 300, temperature: 0.7 }, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
-      const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += value;
-        let cut;
-        while ((cut = buffer.indexOf('\n')) >= 0) {
-          const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
-          if (!line.startsWith('data:')) continue;
-          const payload = line.slice(5).trim();
-          if (payload === '[DONE]') return;
-          try { const j = JSON.parse(payload), d = j.response ?? j.choices?.[0]?.delta?.content; if (d) yield d; } catch { /* keep-alive or partial */ }
+      const cap = generationTokens(LIMITS.talker);
+      const body = { messages, stream: true, max_tokens: cap, temperature: 0.7 };
+      const held = await meter.hold(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }));
+      let usage = null;
+      let failed = null;
+      try {
+        const stream = await held.run(env.TALKER_MODEL, body, affinity ? { extraHeaders: { 'x-session-affinity': affinity } } : undefined);
+        const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+        let buffer = '';
+        try {
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += value;
+            let cut;
+            while ((cut = buffer.indexOf('\n')) >= 0) {
+              const line = buffer.slice(0, cut).trim(); buffer = buffer.slice(cut + 1);
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (payload === '[DONE]') return;
+              try {
+                const j = JSON.parse(payload);
+                const found = usageFrom(j);
+                if (found) usage = found;
+                const d = j.response ?? j.choices?.[0]?.delta?.content;
+                if (d) yield d;
+              } catch { /* keep-alive or partial */ }
+            }
+          }
+        } finally {
+          try { reader.releaseLock(); } catch { /* already released */ }
         }
+      } catch (e) {
+        failed = e;
+        throw e;
+      } finally {
+        try { await held.finish(failed ? { error: failed.name || 'Error' } : (usage ? { usage } : {})); }
+        catch (settleError) { if (!failed) throw settleError; }
       }
     },
-    async complete(messages, maxTokens = 2500) {
+    async complete(messages, spec = LIMITS.analystComplete) {
       assertAiOn(env);
-      return responseText(await runReasoning(env, { messages, temperature: 0.1, max_tokens: maxTokens }));
+      const chosen = typeof spec === 'number' ? { maxTokens: spec, reasoningTokens: 0 } : (spec && typeof spec === 'object' && spec.maxTokens ? spec : LIMITS.analystComplete);
+      return responseText(await runReasoning(env, { messages, temperature: 0.1 }, chosen));
     },
     async embed(text) {
       assertAiOn(env);
-      const r = await env.AI.run(env.EMBED_MODEL || '@cf/baai/bge-m3', { text: [String(text).slice(0, 8000)] });
+      const model = env.EMBED_MODEL || '@cf/baai/bge-m3', input = capText(text, LIMITS.embed.maxChars);
+      const r = await meter.run(() => ({ kind: 'embed', model, inputTokens: inputTokenCeiling(utf8Length(input)) }), model, { text: [input] });
       const v = r?.data?.[0];
       return Array.isArray(v) && v.length ? v : null;
     },
     async report(messages) {
       assertAiOn(env);
-      return responseText(await runReasoning(env, { messages, temperature: 0.2, max_tokens: 3000 }));
+      return responseText(await runReasoning(env, { messages, temperature: 0.2 }, LIMITS.analystReport));
     },
     async analyst(messages) {
       assertAiOn(env);
-      return responseToolCalls(await runReasoning(env, { messages, tools: CHAT_TOOLS, tool_choice: 'auto', temperature: 0, max_tokens: 1500 }));
+      return responseToolCalls(await runReasoning(env, { messages, tools: CHAT_TOOLS, tool_choice: 'auto', temperature: 0 }, LIMITS.analyst));
     },
   };
 }

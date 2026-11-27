@@ -18,15 +18,149 @@ from .capacity import BUSY
 from .identity import COOKIE
 from .interview import project_context
 from .quality import InterviewLedger, session_config
+from .limits import LIMITS, realtime_increment, realtime_reservation
+from .quality import transcription_estimate
+from .spend import BudgetRefused, refusal_event, reserve, usage_from
 
 VOICES=('cedar','marin','ash','sage','verse')
+
+class RealtimeMeter:
+    """Reserves the realtime session in short increments and settles each one inside the ledger TTL."""
+
+    def __init__(self, http, model, transcribe_model=None, now=None):
+        self.http = http
+        self.model = model
+        self.transcribe_model = transcribe_model
+        self.now = now or time.monotonic
+        self.holds = []
+        self.unsettled_in = 0
+        self.unsettled_out = 0
+        self.unsettled_audio_ms = 0.0
+        self.audio_bytes = 0
+        self.seen = False
+        self.errors = []
+
+    def _open(self):
+        inn = out = audio = 0
+        for hold in self.holds:
+            if hold['settled']:
+                continue
+            inn += hold['input']
+            out += hold['output']
+            audio += hold['audio_ms']
+        return inn, out, audio
+
+    async def _settle(self, hold, usage):
+        try:
+            await hold.settle(usage)
+        except BudgetRefused as error:
+            self.errors.append(error)
+            line = {'atlas_metric': 'ledger', 'error': 'settle'}
+            if isinstance(hold.ident, str):
+                line['id'] = hold.ident
+            print(json.dumps(line), flush=True)
+            raise
+
+    async def open_increment(self):
+        book = realtime_increment()
+        output = book['outputTokens'] + int(LIMITS['realtime']['maxResponseTokens'])
+        hold = await reserve({'kind': 'realtime', 'provider': 'openai', 'model': self.model,
+                              'inputTokens': book['inputTokens'], 'outputTokens': output}, self.http)
+        transcribe = None
+        if self.transcribe_model:
+            try:
+                transcribe = await reserve(transcription_estimate(self.transcribe_model, book['audioMs']), self.http)
+            except BudgetRefused:
+                await self._settle(hold, {'inputTokens': 0, 'outputTokens': 0})
+                raise
+        self.holds.append({'hold': hold, 'transcribe': transcribe, 'opened': self.now(), 'input': book['inputTokens'],
+                           'output': output, 'audio_ms': book['audioMs'], 'settled': False})
+
+    async def ensure(self):
+        for _ in range(40):
+            inn, out, audio = self._open()
+            if self.unsettled_in <= inn and self.unsettled_out <= out and self.unsettled_audio_ms <= audio:
+                if any(not hold['settled'] for hold in self.holds):
+                    return
+            try:
+                await self.open_increment()
+            except BudgetRefused as refused:
+                try:
+                    await self.settle_outstanding()
+                except BudgetRefused:
+                    pass
+                raise refused
+        raise BudgetRefused('exhausted:usd')
+
+    async def note_response(self, usage):
+        if not usage:
+            return
+        self.seen = True
+        self.unsettled_in += int(usage.get('inputTokens') or 0)
+        self.unsettled_out += int(usage.get('outputTokens') or 0)
+        await self.ensure()
+
+    async def note_audio(self, nbytes):
+        self.audio_bytes += int(nbytes)
+        self.unsettled_audio_ms += int(nbytes) / int(LIMITS['pcmBytesPerMs'])
+        await self.ensure()
+
+    async def tick(self):
+        limit = int(LIMITS['realtime']['incrementSeconds'])
+        now = self.now()
+        for hold in list(self.holds):
+            if not hold['settled'] and now - hold['opened'] >= limit:
+                await self._settle_one(hold)
+        await self.ensure()
+
+    async def settle_outstanding(self):
+        open_holds = [hold for hold in self.holds if not hold['settled']]
+        if not open_holds:
+            return
+        for hold in open_holds[:-1]:
+            await self._settle_one(hold)
+        await self._settle_one(open_holds[-1], overrun=True)
+
+    async def _settle_one(self, hold, overrun=False):
+        if hold['settled']:
+            return
+        if overrun:
+            take_in = self.unsettled_in
+            take_out = self.unsettled_out
+            take_audio = self.unsettled_audio_ms
+        else:
+            take_in = min(self.unsettled_in, hold['input'])
+            take_out = min(self.unsettled_out, hold['output'])
+            take_audio = min(self.unsettled_audio_ms, hold['audio_ms'])
+        usage = {'inputTokens': int(take_in), 'outputTokens': int(take_out)} if self.seen else None
+        await self._settle(hold['hold'], usage)
+        if hold['transcribe'] is not None:
+            await self._settle(hold['transcribe'], {'audioMs': int(take_audio)})
+        self.unsettled_in -= take_in
+        self.unsettled_out -= take_out
+        self.unsettled_audio_ms -= take_audio
+        hold['settled'] = True
+
+    async def settle_all(self):
+        first = None
+        open_holds = [hold for hold in self.holds if not hold['settled']]
+        for index, hold in enumerate(open_holds):
+            try:
+                # The last open hold carries every token the increments could not cover.
+                # The ledger stores that excess as spend plus overrun and latches the month.
+                await self._settle_one(hold, overrun=(index == len(open_holds) - 1))
+            except BudgetRefused as error:
+                first = first or error
+        if first:
+            raise first
+
 
 async def run(request,config,identity,memory,http,gate,active):
     subject=identity.require(request)
     if request.headers.get('Origin')!=config.origin:raise web.HTTPForbidden(text='Invalid voice origin')
     ws=web.WebSocketResponse(max_msg_size=32768,heartbeat=20)
     await ws.prepare(request)
-    ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False
+    ledger=InterviewLedger();upstream=None;tasks=[];held=False;capture=False;clean_end=False;meter=RealtimeMeter(http, config.openai_model);settle_error=None
     session_cookie=request.cookies.get(COOKIE,'');bytes_in=0;last_input=time.monotonic();started=time.monotonic()
     queue=asyncio.Queue(maxsize=1500);sent={};played={};cancelled=set();current_item=None;current_response=None
     tool_count=0;pending_call_ids=set()
@@ -51,6 +185,10 @@ async def run(request,config,identity,memory,http,gate,active):
         project=project_context(init.get('project'));ledger.stage=project.get('stage','Unknown');voice=init.get('voice',config.openai_voice)
         if voice not in VOICES:raise ValueError('Unsupported voice')
         capture=init.get('capture') is True
+        meter.transcribe_model = config.openai_transcribe if capture else None
+        book=realtime_reservation(getattr(config, 'duration', None))
+        seconds=book['seconds']
+        await meter.open_increment()
         slot=gate.try_acquire(subject.subject_key)
         if slot!='ok':raise ValueError(BUSY[slot])
         held=True;active[session_cookie]=ws
@@ -79,7 +217,7 @@ async def run(request,config,identity,memory,http,gate,active):
             for task in (prepare,cancel):
                 if not task.done():task.cancel()
             await asyncio.gather(prepare,cancel,return_exceptions=True)
-        await event('ready',model=config.openai_model,provider='OpenAI Realtime',sampleRate=24000,capture=capture,maxSeconds=config.duration,
+        await event('ready',model=config.openai_model,provider='OpenAI Realtime',sampleRate=24000,capture=capture,maxSeconds=seconds,
           message='Voice session ready. Speak naturally. Candidate notes require your review.')
         await send({'type':'response.create','response':{'instructions':'Introduce yourself briefly as ATLAS, then ask the single most relevant opening question about the project. Do not assume a benefit or read the entire topic list.'}})
         started=last_input=time.monotonic()
@@ -92,6 +230,8 @@ async def run(request,config,identity,memory,http,gate,active):
                     if not data or len(data)%2 or len(data)>3840:raise ValueError('Invalid PCM frame')
                     bytes_in+=len(data);last_input=time.monotonic()
                     if bytes_in>(last_input-started+3)*48000:raise ValueError('Audio exceeds realtime input budget')
+                    if bytes_in>seconds*1000*int(LIMITS['pcmBytesPerMs']):raise BudgetRefused('exhausted:usd')
+                    await meter.note_audio(len(data))
                     await send({'type':'input_audio_buffer.append','audio':base64.b64encode(data).decode()})
                 elif msg.type==aiohttp.WSMsgType.TEXT:
                     value=json.loads(msg.data)
@@ -138,6 +278,9 @@ async def run(request,config,identity,memory,http,gate,active):
                     if e.get('response_id') not in cancelled:await event('agent_text',text=e.get('delta',''))
                 elif kind=='response.done':
                     response=e.get('response',{})
+                    found=usage_from(response)
+                    if found:
+                        await meter.note_response(found)
                     if response.get('id') in cancelled:continue
                     calls=[v for v in response.get('output',[]) if v.get('type')=='function_call']
                     for call in calls:
@@ -173,7 +316,8 @@ async def run(request,config,identity,memory,http,gate,active):
             while True:
                 await asyncio.sleep(1)
                 if identity.sessions.get(session_cookie) is not subject or time.monotonic()>subject.expires:raise PermissionError('Sign-in expired; voice stopped')
-                if time.monotonic()-started>=config.duration:clean_end=True;return
+                await meter.tick()
+                if time.monotonic()-started>=seconds:raise BudgetRefused('exhausted:usd')
                 if time.monotonic()-last_input>12:raise ConnectionError('Microphone frames stopped')
         tasks=[asyncio.create_task(f()) for f in (client_input,provider_output,paced_playback,watch)]
         done,_=await asyncio.wait(tasks,return_when=asyncio.FIRST_COMPLETED)
@@ -181,6 +325,10 @@ async def run(request,config,identity,memory,http,gate,active):
             if not t.cancelled() and t.exception():raise t.exception()
     except (ValueError,PermissionError) as e:
         clean_end=False;await event('error',message=str(e),code='voice-contract')
+    except BudgetRefused as refused:
+        clean_end=False
+        message, code = refusal_event(refused)
+        await event('error', message=message, code=code)
     except (aiohttp.ClientError,ConnectionError,TimeoutError):
         clean_end=False;await event('error',message='Selected voice provider unavailable. No fallback provider was used.',code='voice-unavailable')
     except Exception:
@@ -188,6 +336,13 @@ async def run(request,config,identity,memory,http,gate,active):
     finally:
         for t in tasks:t.cancel()
         if tasks:await asyncio.gather(*tasks,return_exceptions=True)
+        try:
+            await meter.settle_all()
+        except BudgetRefused as error:
+            settle_error=error
+        if settle_error is not None:
+            message, code = refusal_event(settle_error)
+            await event('error', message=message, code=code)
         if upstream is not None:
             with contextlib.suppress(Exception):await upstream.close()
         if active.get(session_cookie) is ws:active.pop(session_cookie,None)

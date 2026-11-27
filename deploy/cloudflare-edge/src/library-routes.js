@@ -11,6 +11,7 @@ import { sweep as retentionSweep } from './retention.js';
 import { holdRoutes } from './subject-rights.js';
 import { secEvent } from './security-log.js';
 import { productionDemoConflict, resolveTenantEnforcement } from './authz.js';
+import { httpBudget } from './budget-stop.js';
 export const SYSTEM = { email: 'atlas', role: 'admin' }; // automatic review after a save
 function scopedReviewer(user = {}) {
   return { email: 'atlas', role: 'admin', tenant: String(user.tenant || '').toLowerCase(), tenantEnforced: user.tenantEnforced === true };
@@ -147,6 +148,8 @@ export async function libraryRoutes(request, lib, { waitUntil = p => p, env = {}
     if (method === 'POST' && action === 'reinstate') return json(lib.reinstate(user, id));
     return json({ error: 'Not found.' }, 404);
   } catch (e) {
+    const stopped = httpBudget(e);
+    if (stopped) return json(stopped.body, stopped.status);
     return e.status ? json({ error: e.message, ...(e.code ? { code: e.code } : {}) }, e.status) : json({ error: 'The library could not complete that request.' }, 500);
   }
 }

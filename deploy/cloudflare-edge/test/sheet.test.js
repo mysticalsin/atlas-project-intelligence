@@ -31,6 +31,8 @@ test('visuals: images described, 2-3 selected, overall approach first, invalid i
     complete: async m => { const u = JSON.parse(m[1].content); assert.equal(u.images.length, 3); return '{"selected":[{"index":2,"approach":false,"why":"Roadmap","caption":"Roadmap"},{"index":1,"approach":true,"why":"Approach","caption":"Overall approach (labels translated from French)"},{"index":9,"why":"bad"},{"index":1,"why":"dup"}]}'; } };
   const r = await (await sheetRoutes(req({ images: [{ name: 'logo', dataUrl: png }, { name: 'approach', dataUrl: png }, { name: 'roadmap', dataUrl: png }, { name: 'bad', dataUrl: 'javascript:x' }], context: 'ERP' }), 'visuals', ai)).json();
   assert.deepEqual(r.selected.map(s => s.index), [1, 2]); assert.equal(r.selected[0].approach, true);
+  const refused = await sheetRoutes(req({ images: [{ name: 'diagram.png', dataUrl: png }] }), 'visuals', { toMarkdown: async () => { throw Object.assign(new Error('Image conversion is refused until detr-resnet-50 has a list price.'), { status: 413, code: 'unpriced_model' }); } });
+  assert.equal(refused.status, 413); assert.equal((await refused.json()).code, 'unpriced_model');
   assert.deepEqual(parseVisuals('{"selected":[{"index":0},{"index":1},{"index":2},{"index":3}]}', 4).length, 3);
   assert.equal(draftMessages({}).length, 2);
 });

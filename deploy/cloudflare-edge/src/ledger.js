@@ -2,6 +2,7 @@
 // Behaviour must match the Python source exactly: test/parity.test.js replays Python-generated
 // scenarios and requires identical results. Candidate details are never verified facts.
 import { FIELDS, TO_TOPIC, NUMERIC_SRC, UNCERTAIN_SRC, UNKNOWN_SRC, ANALYST_POLICY, CONTEXT_SEGMENTS, SEGMENT_CHARS, MAX_CALLS } from './policy.generated.js';
+import { budgetOutcome } from './budget-stop.js';
 
 const FIELD_KEYS = Object.keys(FIELDS);
 const NUMERIC = new RegExp(NUMERIC_SRC, 'i');
@@ -171,7 +172,7 @@ export class Analyst {
     try {
       calls = await Promise.race([this.complete(buildMessages(this.ledger, itemId)), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), this.timeoutMs))]);
       if (!Array.isArray(calls)) throw new Error('bad');
-    } catch { calls = []; status = 'analyst-unavailable'; }
+    } catch (e) { calls = []; status = budgetOutcome(e) ? 'budget_exhausted' : 'analyst-unavailable'; }
     for (const call of calls.slice(0, MAX_CALLS)) {
       if (call?.name !== 'record_details') { ignored += 1; continue; }
       let details;

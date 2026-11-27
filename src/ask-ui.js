@@ -38,7 +38,7 @@ function syncMic(){const mic=$('askMic');if(!mic)return;const on=micAvailable(),
  if(on&&!S.poll)S.poll=setInterval(syncMic,1000);else if(!on&&S.poll){clearInterval(S.poll);S.poll=null;}}
 async function ask(){const q=$('askQuestion').value.trim(),btn=$('askGo');if(q.length<8){say('Ask a question of at least 8 characters.');$('askQuestion').focus();return;}
  btn.disabled=true;S.asked=q;say('Searching the references you can see…');
- try{const r=await app().libraryApi('/ask',{method:'POST',body:{question:q.slice(0,600),limit:6}});S.last=r;draw(r);say('');}
+ try{const r=await app().libraryApi('/ask',{method:'POST',body:{question:q.slice(0,600),limit:6}});S.last=r;draw(r);say(r.budget?.code==='budget_exhausted'?r.budget.message:'');}
  catch(err){say(err.message);}finally{btn.disabled=false;}}
 function snippetLabel(s){const topic=typeof s?.topic==='number'?TOPIC_KEYS[s.topic]:s?.topic;return B.sourceLabel({kind:s?.kind,topic,sourceName:s?.sourceName});}
 function card(x){const rel=typeof x.relevance==='number'?'relevance '+Math.round(x.relevance):'not ranked',sim='similarity '+(typeof x.similarity==='number'?x.similarity.toFixed(2):'n/a')+' · '+(x.retrieval==='lexical'?'keyword':'semantic');
@@ -48,7 +48,7 @@ function card(x){const rel=typeof x.relevance==='number'?'relevance '+Math.round
 <div class="tags"><span class="status-badge status-${x.status}">${STATUS[x.status]||x.status}</span>${frag([x.practice,x.industry,x.country].filter(Boolean).map(t=>html`<span class="tag">${t}</span>`))}</div>
 ${(x.why)?(html`<p class="small">${x.why}</p>`):('')}${(x.caveat)?(html`<p class="tiny muted">Caveat: ${x.caveat}</p>`):('')}${snips}${(people)?(html`<p class="tiny">Worked on it: ${people}</p>`):('')}<button class="quiet" data-open-record="${x.id}" type="button">Open reference →</button></article>`;}
 function draw(r){const results=Array.isArray(r.results)?r.results:[],c=B.askVerdictCopy(r.verdict,results)||{tone:'none',text:B.ASK_EMPTY};
- const v=$('askVerdict');v.hidden=false;setHTML(v,(html`<div class="verdict-banner v-${c.tone}" role="status"><strong>${c.text}</strong></div><p class="tiny muted">${r.note?r.note+' ':''}${r.method?'Method: '+r.method+'. ':''}${r.label||''}</p>`||html``));
+ const v=$('askVerdict');if(r.budget?.code==='budget_exhausted')v.hidden=true;else{v.hidden=false;setHTML(v,(html`<div class="verdict-banner v-${c.tone}" role="status"><strong>${c.text}</strong></div><p class="tiny muted">${r.note?r.note+' ':''}${r.method?'Method: '+r.method+'. ':''}${r.label||''}</p>`||html``));}
  setHTML($('askResults'),(frag(results.map(card))||html``));
  const countries=(Array.isArray(r.countries)?r.countries:[]).filter(x=>x&&typeof x.name==='string'&&Number.isInteger(x.n)&&x.n>0),map=$('askMap');
  if(window.AtlasCharts&&results.length){setHTML(map,(trusted(window.AtlasCharts.portfolioMap({byCountry:countries,totals:{visible:results.length}},{interactive:true}))||html``));window.AtlasCharts.bind(map);}else map.replaceChildren();

@@ -54,6 +54,7 @@ async function token(email, custom = null) {
 const model = fakeModel(), model_complete = m => model.complete(m);
 const pending = new Set(), stores = new Map();
 const waitUntil = p => { const q = Promise.resolve(p); pending.add(q); q.finally(() => pending.delete(q)).catch(() => {}); };
+console.log(JSON.stringify({ atlas_metric: 'ledger', mode: 'off' }));
 // Opt-in feature vars pass through from the shell when set (never defaulted here): WOW_SPEC §5, WOW_ZERO_CONFIG §4.
 // DATA_MODE stays unset (test mode) unless the shell sets it. Do not set DATA_MODE=production here:
 // this process also sets local-synthetic and ATLAS_DEV_IDENTITY, and the Worker refuses that combination.
@@ -78,8 +79,9 @@ function interviewStorage() {
 }
 const storeFor = id => { if (!stores.has(id)) stores.set(id, interviewStorage()); return stores.get(id); };
 // Dev harness only. Production opens the library in worker.js. A null key still throws before any write.
+// LEDGER_MODE off: this process is a loopback stand-in with no paid upstream.
 export const DEV_AUDIT_SALT = 'atlas-dev-audit-salt';
-const env = { ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', LOG_SALT: DEV_AUDIT_SALT, TALKER_MODEL: 'local', TTS_VOICE: 'local',
+const env = { LEDGER_MODE: 'off', ORIGIN, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, CSRF_SECRET: 'local-only', LOG_SALT: DEV_AUDIT_SALT, TALKER_MODEL: 'local', TTS_VOICE: 'local',
   TRIGGER_SECRET: process.env.TRIGGER_SECRET || 'local-trigger-secret', ANALYST_MODEL: 'local-analyst',
   // Stand-ins for the Workers AI binding: toMarkdown (documents and image descriptions) and chat completions.
   AI: { toMarkdown: async f => { const t = f.blob.type || ''; return t.startsWith('image/') ? { format: 'markdown', data: 'A diagram showing the project phases and approach' } : { format: 'markdown', data: new TextDecoder().decode(await f.blob.arrayBuffer()) }; },

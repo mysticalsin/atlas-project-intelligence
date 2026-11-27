@@ -6,8 +6,8 @@
   "workers_dev": true,
   "preview_urls": false,
   "ai": { "binding": "AI" },
-  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }],
+  "durable_objects": { "bindings": [{ "name": "INTERVIEW", "class_name": "Interview" }, { "name": "LIBRARY", "class_name": "LibraryStore" }, { "name": "SPEND_LEDGER", "class_name": "ProductionSpendLedger" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Interview"] }, { "tag": "v2", "new_sqlite_classes": ["LibraryStore"] }, { "tag": "v3", "new_sqlite_classes": ["ProductionSpendLedger"] }],
   "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
   "observability": { "enabled": true },
   "triggers": { "crons": ["17 6 * * *"] },
@@ -35,7 +35,17 @@
     "TTS_MODEL_ES": "@cf/deepgram/aura-2-es",
     "TTS_VOICE_ES": "celeste",
     "ELEVENLABS_MODEL": "eleven_flash_v2_5",
-    "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM"
+    "ELEVENLABS_VOICE_ID": "21m00Tcm4TlvDq8ikWAM",
+    // Tony, 2026-11-11, via Jarvis 18:19 BRT: every AI call shares one $5 UTC-month budget and fails closed.
+    // No limit override in this file, so the $5 default in meter.js applies.
+    // Unset LEDGER_MODE means enforce. This file sets enforce. It is not opt-in.
+    // /api/ledger/reserve, /settle and /record are answered before the signed-in page.
+    // This file does not add an Access bypass for those paths. ACCESS_AUD is set above, so the Worker
+    // still requires the existing Access service token (CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET)
+    // or a verified Access JWT, and then the bearer ATLAS_LEDGER_TOKEN. Python sends that bearer and,
+    // when those two Access variables are already set, the service-token headers. No token is minted here.
+    // Holding ATLAS_LEDGER_TOKEN and passing that Access check spends this month's budget.
+    "LEDGER_MODE": "enforce"
   }
   // Secrets (never committed): CSRF_SECRET (deploy.sh); optional via set-keys.sh: HINDSIGHT_API_KEY, TYPESAFE_API_KEY, ELEVENLABS_API_KEY
   // Optional WOW vars (docs/WOW_SPEC.md section 5), all unset by default; Tony decides and sets them, no values here:

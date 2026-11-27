@@ -16,6 +16,7 @@ import { placeholders, readChunks } from './sql-bound.js';
 import { sameTenant, TENANT_ID } from './authz.js';
 import { appendAudit, checkpointHead, ensureChain, verifyChain, anchoredVerdict, rewriteRows, verifyDaily, isTombstoneActor } from './audit-chain.js';
 import { recordUsage } from './telemetry.js';
+import { budgetOutcome, exhaustedError, generatedText, optionalModel } from './budget-stop.js';
 import { publicationEffect, publicationStatus, publicationTransition, readPublication } from './publication.js';
 import { invitationTransition, noteInvitation, INVITATION_REFUSAL, OPEN_INVITATION_SQL } from './invitation.js';
 import { bareSemicolon, explainThenMore, hasCreateAsSelect, hiddenWrite, isMutatingStatement, leadingWords, namedVariable, pragmaClass, pragmaSetter, pragmaSetterName, provenRead, remainderIsNoise, splitStatements, sqlShape, unclosedLexeme, unparsedTail, writableAssignment } from './sql-text.js';
@@ -1139,7 +1140,11 @@ export class Library {
       // Any JEV failure falls back to the review agent. An unexpected error is recorded as `rejected` (metric 7): the
       // person still gets a rating, and the metric shows JEV did not answer.
       try { done = await this.jevRating(row, { gen, budget }); }
-      catch (e) { fallback = e instanceof RatingError ? e.code : 'rejected'; meta = e instanceof RatingError ? e.meta : {}; }
+      catch (e) {
+        if (budgetOutcome(e)) throw exhaustedError();
+        if (e?.name === 'BudgetRefused') throw e;
+        fallback = e instanceof RatingError ? e.code : 'rejected'; meta = e instanceof RatingError ? e.meta : {};
+      }
       if (done) {
         const stored = this.storeRating(row, gen, done.quality, actor, done.lastJev);
         this.emitRating(done.quality, { ...done.meta, escalated: done.escalate, strict: done.quality.jev.strict });
@@ -1246,11 +1251,13 @@ export class Library {
     // The query is typed text: every model call gets its pseudonymised form, and what comes back to the caller is
     // un-masked with its map, so they read their own words (no trace of which names ATLAS knows).
     const q = pseudonymise(this, query), mine = forAuthor(this, q.map, { authorText: q.text });
-    const target = parseTarget(await this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: q.text }]).catch(() => ''), q.text);
+    const targetGot = await optionalModel(this.complete([{ role: 'system', content: TARGET_POLICY }, { role: 'user', content: q.text }]), '');
+    const target = parseTarget(targetGot.value, q.text);
     const pool = this.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full');
     if (!pool.length) return { target: mine(target), results: [], method: 'none', note: 'No references are available to you yet.' };
     const want = [target.searchText, target.industry, target.likelyChallenges.join('. '), target.capabilities.join(', ')].join('\n');
-    const qv = this.embed ? await this.embed(want).catch(() => null) : null;
+    const embedGot = this.embed ? await optionalModel(this.embed(want), null) : { value: null, budget: null };
+    const qv = embedGot.value;
     const wins = winSignals(this, user); // bounded win-history boost (F7): order only, never model relevance, this tenant only
     const scored = pool.map(([r, level]) => {
       const m = forModel(r.data), sem = qv && r.embedding ? cosine(qv, JSON.parse(r.embedding)) : null, lex = lexical(want, searchText(m));
@@ -1258,15 +1265,17 @@ export class Library {
       return { r, level, score: (sem ?? lex) + boost, similarity: sem ?? lex };
     }).sort((a, b) => b.score - a.score).slice(0, 12);
     const cards = scored.map(s => candidateCard(s.r.id, recordView(this, s.r.data)));
-    const ranked = parseRerankStrict(await this.complete([{ role: 'system', content: RERANK_POLICY },
-      { role: 'user', content: JSON.stringify({ context: { query: q.text, ...target }, candidates: cards }) }]).catch(() => ''), cards.map(c => c.id));
+    const rankGot = await optionalModel(this.complete([{ role: 'system', content: RERANK_POLICY },
+      { role: 'user', content: JSON.stringify({ context: { query: q.text, ...target }, candidates: cards }) }]), '');
+    const ranked = parseRerankStrict(rankGot.value, cards.map(c => c.id));
+    const budget = targetGot.budget || embedGot.budget || rankGot.budget || null;
     // Unranked either way, but say which: the model did not answer (null) or nothing reached 30 ([]).
     const caveat = ranked ? 'Matched by similarity only; no candidate reached the relevance threshold of 30.' : 'Matched by similarity only; the ranking model did not answer.';
     const byId = new Map(scored.map(s => [s.r.id, s]));
     const results = (ranked?.length ? ranked : scored.slice(0, limit).map(s => ({ id: s.r.id, relevance: null, why: '', transferable: [], caveat })))
       .slice(0, limit).map(x => { const s = byId.get(x.id); return { ...this.summary(s.r, s.level, user), ...x, why: mine(x.why), transferable: mine(x.transferable), caveat: mine(x.caveat), similarity: Math.round(s.similarity * 100) / 100 }; });
     this.log('library', user.email, 'recommendation', `${results.length} results`);
-    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.' };
+    return { target: mine(target), results, method: (qv ? 'semantic' : 'lexical') + (ranked?.length ? ' + model ranking' : ''), label: 'Relevance and reasons are interpretation; open each reference for the facts.', ...(budget ? { budget } : {}) };
   }
 
   // Consolidation: one stronger reference; every consultant keeps access and their own contribution.
@@ -1315,7 +1324,7 @@ export class Library {
     // keeps only its length (it may name the prospect).
     const m = recordView(this, row.data), context = str(obj(body).context, 800), c = pseudonymise(this, context);
     const source = JSON.stringify(m);
-    const out = parseSlides(await this.complete([{ role: 'system', content: SLIDES_POLICY }, { role: 'user', content: JSON.stringify({ context: c.text || 'A general client presentation.', reference: m }) }]).catch(() => ''), source + ' ' + c.text);
+    const out = parseSlides(await generatedText(this.complete([{ role: 'system', content: SLIDES_POLICY }, { role: 'user', content: JSON.stringify({ context: c.text || 'A general client presentation.', reference: m }) }])), source + ' ' + c.text);
     if (!out) throw fail(502, 'The slide writer did not produce usable text. Try again.');
     const d = row.data.details;
     this.log(id, user.email, 'slides generated', `context ${context.length} characters`);
@@ -1351,7 +1360,7 @@ export class Library {
     const pub = this.visibleRows(user).filter(([r]) => r.status === 'published').slice(0, 60);
     if (pub.length < 3) return { repeatedNeeds: [], emergingExpertise: [], offeringIdeas: [], gaps: [], label: 'interpretation', note: 'At least three published references are needed.' };
     const cards = pub.map(([r]) => candidateCard(r.id, recordView(this, r.data)));
-    const out = parseInsights(await this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }], 4000).catch(() => ''), cards.map(c => c.id));
+    const out = parseInsights(await generatedText(this.complete([{ role: 'system', content: INSIGHTS_POLICY }, { role: 'user', content: JSON.stringify({ references: cards }) }])), cards.map(c => c.id));
     if (!out) throw fail(502, 'The insights model did not answer. Try again.');
     this.log('library', user.email, 'insights', `${pub.length} references`);
     return { ...out, titles: Object.fromEntries(pub.map(([r]) => [r.id, r.data.title])), basedOn: pub.length };
