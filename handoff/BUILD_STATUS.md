@@ -15,6 +15,8 @@ Measured on this tree before the manifest refresh:
 - Edge `node --test test/*.test.js` after `npm ci` (miniflare `4.20260730.0` from the lockfile) and `aiohttp` 3.14.5: 1212 tests, 1208 pass, 0 fail, 4 skipped, exit 0, 222.8s. The four skips are `workerd 2026-10-23 is not installed; set ATLAS_WORKERD_ROOT`.
 - `python3 -m pytest tests/test_*.py -q`: 437 passed, 2 failed, 127 warnings, exit 1. Both failures are the stale manifest (`test_repository_full_handoff_includes_clean_rebuild`, `test_git_archive_of_head_passes_check_handoff`). The archive test scores `HEAD` before this merge commit.
 
+After merge commit `5cf5fe53b1ef155886b497ef118687ce99d099c4`, the same pytest command is 439 passed, 0 failed, 127 warnings, exit 0. `CHROMIUM_PATH=/usr/local/bin/google-chrome make test-ui`: 848 PASS, 0 FAIL, exit 0. `MANIFEST.json` is refreshed again after this sentence.
+
 Deploy of the live worker is `BLOCKED_EXTERNAL`: `wrangler whoami` is unauthenticated. `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CF_API_TOKEN`, and `WRANGLER_API_TOKEN` are unset. No `wrangler login` and no deploy.
 
 ## 2026-11-20 — check_handoff fence loop 4 (`cursor/atlas-checkhandoff-nested-git`)
