@@ -14,7 +14,8 @@
 |---|---|---|
 | `atlas_voice/config.py` | `Config` L24; `endpoint` L11 | Operator config and input validation |
 | `atlas_voice/server.py` | `create_app` L40; `main` L385 | HTTP middleware, bootstrap, selected voice route and lifecycle |
-| `atlas_voice/identity.py` | `Session` L16; `Identity` L28 | MSAL auth-code flow, session claims, roles, cookies |
+| `atlas_voice/identity.py` | `Session` L24; `Identity` L37 | Local, Entra auth-code, or VibeApps forwarded headers; session claims, roles, cookies |
+| `atlas_voice/multiinstance.py` | `PostgresAdapter`; `BlobAdapter` | Stubs for shared sessions, locks, throttles, the registry, and revision files. They refuse to connect. |
 | `atlas_voice/realtime.py` | `run` L23 | Hosted realtime transport, readiness, audio cancellation and tools |
 | `atlas_voice/quality.py` | `InterviewLedger` L52; `session_config` L205 | 12-field candidate ledger, quote validation and next-question plan |
 | `atlas_voice/interview.py` | `project_context` L23; `make_prompt` L41 | Bounded authorized/user-supplied project context and NVIDIA role prompt |

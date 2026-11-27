@@ -157,7 +157,7 @@ async def run(request, config, identity, memory, http, gate, active):
         raise web.HTTPForbidden(text='Invalid voice origin')
     ws = web.WebSocketResponse(max_msg_size=32768, heartbeat=20)
     await ws.prepare(request)
-    session_cookie = request.cookies.get(COOKIE, '')
+    session_cookie = identity.session_key(request)
     held = capture = clean_end = False
     stt = None  # speech backend (KyutaiSpeech or WorkersSpeech)
     tasks, side = [], set()

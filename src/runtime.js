@@ -1,4 +1,4 @@
-/* The server's per-person facts (subjectKey, authMode, name) arrive as DATA, never as script: the Worker or gateway fills the
+/* The server's per-person facts (subjectKey, authMode, name, and basePath under /run/atlas/ or /run/atlas-dev/) arrive as DATA, never as script: the Worker or gateway fills the
    <script type="application/json" id="atlas-runtime"> block (JSON with "<" escaped), and this reads it. An offline copy has the
    empty block, so window.ATLAS_RUNTIME stays undefined and the page behaves as before. */
 (()=>{let r;try{const el=document.getElementById('atlas-runtime'),v=el?JSON.parse(el.textContent||'null'):null;

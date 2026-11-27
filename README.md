@@ -67,6 +67,8 @@ Configure `HINDSIGHT_URL`, `HINDSIGHT_API_KEY` and a stable random `HINDSIGHT_BA
 
 For shared use, configure `ATLAS_AUTH=entra`, exact HTTPS origin/redirect URI and server-held Entra credentials. Assign `ATLAS.Interview` to users and independently assign `ATLAS.Review` and `ATLAS.Publish` where authorized. Follow `docs/NVIDIA_SETUP.md` for the existing identity/proxy deployment. Local profiles organize browser drafts but do not authenticate users. Entra login does not magically make all local project drafts a centrally governed database.
 
+VibeApps is a separate mode. `ATLAS_AUTH=vibeapps` accepts only `X-Forwarded-User-Email`, `X-Forwarded-User-Name`, and `X-Forwarded-User-Id`. The process serves under `APP_BASE_PATH` (`/run/atlas/` or `/run/atlas-dev/`) on `ATLAS_PORT` (default 8080, the manifest port). Sessions, locks, and throttles remain in memory. The wiki registry remains SQLite. The Postgres and Blob adapters refuse to connect. Secret names, and no values, are in `docs/VIBEAPPS_PACKAGING.md`.
+
 ## Markdown wiki and optional Graphify
 
 Set `ATLAS_WIKI_ROOT` to a private durable directory. Drafts are immutable Markdown revisions. The SQLite registry stores current version, content hash, access, review, expiry and withdrawal. Back up both together. The provided pilot uses one process.

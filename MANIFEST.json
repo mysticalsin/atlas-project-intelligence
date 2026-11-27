@@ -12,8 +12,8 @@
   "files": [
     {
       "path": ".env.example",
-      "bytes": 2161,
-      "sha256": "0056275a2250cf1b33af8dd1329ec2b271e728486cbd6008299c7b4f20bf33e8"
+      "bytes": 2395,
+      "sha256": "209875af976faaf64d4bf841a3fa202b6fe8de47545b5daac972197473e7d0fc"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924015,
-      "sha256": "7a290026b91b2e3f732b31146927a158bb30243ed2bea6fd74f517ae31dd7d4a"
+      "bytes": 924945,
+      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
     },
     {
       "path": "CLAUDE.md",
@@ -667,8 +667,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 10592,
-      "sha256": "2252cb30bfb3eac79549bb6f6c88783af016a65959e2192a67b265cc9d3ebbc4"
+      "bytes": 11063,
+      "sha256": "bbefe8ace093ccdeaf076ff4510d0b087f1954430bb3b77e0ab3d7e81c3c0ced"
     },
     {
       "path": "SECOND_BRAIN.md",
@@ -712,13 +712,13 @@
     },
     {
       "path": "atlas_voice/cascade.py",
-      "bytes": 32311,
-      "sha256": "50966c625b8efa6cd745e96eb9e4dfd5ddce3d622b34d8fb9859c947f72e0752"
+      "bytes": 32309,
+      "sha256": "cf77b98c5f88803ab86b9c00691158f34397a9d899e2df86ff5a5a37282ff681"
     },
     {
       "path": "atlas_voice/config.py",
-      "bytes": 11045,
-      "sha256": "3a938c7c41010be106b3114e56b66b7ebaa338c672e636a87df6da73a5f4913a"
+      "bytes": 12462,
+      "sha256": "b4cedd619c6f5bbd65b716d99f1ee4e2dd836f44d09caff2686461b405cb846d"
     },
     {
       "path": "atlas_voice/config/privacy.json",
@@ -752,8 +752,8 @@
     },
     {
       "path": "atlas_voice/identity.py",
-      "bytes": 4781,
-      "sha256": "505257ca223dc362d860b66180ca6e008ce3b8b418a0870a33a839f34bf6c498"
+      "bytes": 8659,
+      "sha256": "658bd879a6a19629c31638e4f57921c914424756ec76c257cdc88f49c2f05437"
     },
     {
       "path": "atlas_voice/interview.py",
@@ -767,8 +767,8 @@
     },
     {
       "path": "atlas_voice/knowledge_routes.py",
-      "bytes": 10236,
-      "sha256": "fae89712ff9d61364b7bf2d47862a32b549dc19b6b4bd9765683df041c21b35e"
+      "bytes": 10312,
+      "sha256": "2fa01820c4dc656287ae91192cc110454438e956e78ed58c86f89f96da76ea79"
     },
     {
       "path": "atlas_voice/kyutai.py",
@@ -784,6 +784,11 @@
       "path": "atlas_voice/memory.py",
       "bytes": 4120,
       "sha256": "407d8e3d8eb3d582f26bb09ef114013587997bd04040bc5dd6276dd8fa3ed1e9"
+    },
+    {
+      "path": "atlas_voice/multiinstance.py",
+      "bytes": 1809,
+      "sha256": "1a9fc498c340d349b66fdd1a465d5fd45c96dd8f257c751e5678e5ff506c6627"
     },
     {
       "path": "atlas_voice/notes.py",
@@ -802,8 +807,8 @@
     },
     {
       "path": "atlas_voice/realtime.py",
-      "bytes": 13987,
-      "sha256": "c4008b87678a3eab8e90457a564a63429b45c54cf8d7431312f2b7a90fb8d443"
+      "bytes": 13957,
+      "sha256": "9aa9429965bd9bba6faf2a8043fb06d65aedc1eb9b0067b0cf7dc2d7943edf93"
     },
     {
       "path": "atlas_voice/report.py",
@@ -812,8 +817,8 @@
     },
     {
       "path": "atlas_voice/server.py",
-      "bytes": 23820,
-      "sha256": "acacb393cb4f4737508add39a53c21ac24e6b6751407dbf315eff5d858c7c79a"
+      "bytes": 25234,
+      "sha256": "8c0598355bdbfa3dfd9e185ae4d6ba67560cf7711179d0b5d4d69f637adf7f87"
     },
     {
       "path": "atlas_voice/speech.py",
@@ -933,7 +938,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "93196c1732d530e8a0ad455ed9b3198c7dd2df0457e1fd9b47582c5a456c0005"
+      "sha256": "a09d4e269ca43b739954dacde7d0bf72d159a44637f1a4b531aeef4f8ff59664"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -998,7 +1003,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "7d54de0b2fed28db9dd1f20106b9cf4526cadd3a9641495c3e68762620bd6dbf"
+      "sha256": "dc1849925d3221d9cb4285f0d6a375964f033b33f0360c557b36ec5ffeb78d4e"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -1427,8 +1432,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant-erase.test.js",
-      "bytes": 31251,
-      "sha256": "64e8e9a94bdc49dd11f19ff3d9e3bc42614eab9dcbce7bb2ca09667528649bee"
+      "bytes": 31300,
+      "sha256": "b696d6ce3c4e43478fa77b94e32be418eba7bdd1cf5e81f1aae2377b2f355561"
     },
     {
       "path": "deploy/cloudflare-edge/test/invitation-tenant.test.js",
@@ -2181,6 +2186,11 @@
       "sha256": "d5fe0b36f477143987491c9c02408997d63b52c3263d49487bf3f2c57388163f"
     },
     {
+      "path": "docs/VIBEAPPS_PACKAGING.md",
+      "bytes": 5433,
+      "sha256": "3e4427ec03dc58deaa164a164c9eb2bbd9d9bbe8c0cd9453152a16bd87ed8947"
+    },
+    {
       "path": "docs/WIKI_SCHEMA.md",
       "bytes": 2377,
       "sha256": "69d34e5edc23d47bc8471ad6559c9bbebbb4420670ff7a870e658986feafad43"
@@ -2297,8 +2307,8 @@
     },
     {
       "path": "handoff/BUILD_STATUS.md",
-      "bytes": 346929,
-      "sha256": "311bfd60630ba451016b72b88b0b6a981fd92c70e54ef68b5d665c65b2522b05"
+      "bytes": 348712,
+      "sha256": "b590a4c7485a18f3c77c0217ac591bb33905097d2623fb8dc55f6d3a795100a1"
     },
     {
       "path": "handoff/CHANGELOG.md",
@@ -2307,8 +2317,8 @@
     },
     {
       "path": "handoff/CODE_MAP.md",
-      "bytes": 10228,
-      "sha256": "5d74de0d720ef9e5ddf1a79ad498941e052767662d6394d0b7975a6e360349f0"
+      "bytes": 10437,
+      "sha256": "800066ab168e895b534b3e572f32d1c803cd65a7bd8f72e71a7d3a3f75fce4ce"
     },
     {
       "path": "handoff/COMMIT_MSG.txt",
@@ -2317,13 +2327,13 @@
     },
     {
       "path": "handoff/CONFIGURATION.md",
-      "bytes": 15803,
-      "sha256": "f0bf3d9ea9fd56084e3e6a509bf060c5031ab980aa1dff3fd5abb1dcdf9bed45"
+      "bytes": 16578,
+      "sha256": "ba23db431490b1738bd2af572f9f9c4854c4f4d8a1383320bc69ad0aca5edab8"
     },
     {
       "path": "handoff/CURRENT_STATUS.md",
-      "bytes": 8247,
-      "sha256": "6f1a83ee3513258647d612530f81e8d53f8a1abdd1770526ef5d026108ba92a8"
+      "bytes": 8432,
+      "sha256": "8d578b505af4664ce7d8e914b6e7482b86784ea67af32738372930c58c76a0d7"
     },
     {
       "path": "handoff/PLAN_REFERENCE_PLATFORM.md",
@@ -2857,8 +2867,8 @@
     },
     {
       "path": "src/intelligence-ui.js",
-      "bytes": 22468,
-      "sha256": "352eb4401a99683a39da4e9c50ce22974ec7e908d3544c801b79919b4c54eb47"
+      "bytes": 22716,
+      "sha256": "1a2884f59ef199f91d517842ef82ebdb664354384499fc10e22886699e220adf"
     },
     {
       "path": "src/intelligence.css",
@@ -2912,8 +2922,8 @@
     },
     {
       "path": "src/runtime.js",
-      "bytes": 600,
-      "sha256": "a8507f85f1dfb342111853e4dab966a201d2a57f658c0c8b7cfdedcc864e27c2"
+      "bytes": 651,
+      "sha256": "41ab48bb5220f10dbc15a3f35eb1c7b2368423dc0475d36a01e0ecc68d20f720"
     },
     {
       "path": "src/safe-html.js",
@@ -2927,8 +2937,8 @@
     },
     {
       "path": "src/session-keeper.js",
-      "bytes": 6971,
-      "sha256": "dd48d2b3fd02db067704d00066dd9e8f39a29113d8a05a7a6600b7bc0d816157"
+      "bytes": 7363,
+      "sha256": "cd3540da4466d9558cb338566d94946c0b1b8f01438db095433263c4518019f9"
     },
     {
       "path": "src/shell.html",
@@ -2977,8 +2987,8 @@
     },
     {
       "path": "src/voice-client.js",
-      "bytes": 45864,
-      "sha256": "36b8a566982698400485dfafa47911360999d992301b680cc1df251860054e05"
+      "bytes": 46103,
+      "sha256": "71b1602638162ce5ed1f48915dc0498b1fcad7d1e1b3de6d8e0014a7d6d7f066"
     },
     {
       "path": "src/voice-dialogs.html",
@@ -3049,6 +3059,11 @@
       "path": "tests/autosave_chain_browser.py",
       "bytes": 5446,
       "sha256": "3eab5c07f2dd75678d7baddb22e7ff948e21893784e6c0dd4a72020f4d822761"
+    },
+    {
+      "path": "tests/base-path-api.test.js",
+      "bytes": 2971,
+      "sha256": "4e0936cc56a1e15bd879069955e55cdacbc0af358ceace86f5ac7c85f56a54a3"
     },
     {
       "path": "tests/bids-core.test.js",
@@ -3474,6 +3489,11 @@
       "path": "tests/test_trust_dom.py",
       "bytes": 336,
       "sha256": "aac5aeab8977a68e9f9d085d3253c97b15854bff31618eb739052039825dde97"
+    },
+    {
+      "path": "tests/test_vibeapps.py",
+      "bytes": 12458,
+      "sha256": "61b966f73ec8f54e9934331bbcb57649d1b7c785f275c1a5696da04bdc12af11"
     },
     {
       "path": "tests/test_voice.py",

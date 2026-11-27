@@ -9,9 +9,15 @@ const pending=new Set(),checks=new Set(),signedInFns=[],REAUTH='atlas.reauthAt',
 let mode='checking',resume=null,deciding=0,waitingVoice=false,voiceWatch=0,bannerOn=false,failures=[],backedUp=false,bootP=null,probeP=null;
 const timeout=ms=>typeof AbortSignal!=='undefined'&&AbortSignal.timeout?AbortSignal.timeout(ms):undefined;
 function setMode(m){if(mode===m)return;mode=m;try{window.dispatchEvent(new CustomEvent('atlas-auth',{detail:{mode:m}}));}catch{}}
+// VibeApps serves the page under /run/atlas/ or /run/atlas-dev/. An empty runtime keeps the root paths.
+function appPath(path){
+ const base=window.ATLAS_RUNTIME&&window.ATLAS_RUNTIME.basePath;
+ if((base==='/run/atlas/'||base==='/run/atlas-dev/')&&typeof path==='string'&&path.charAt(0)==='/')return base.replace(/\/$/,'')+path;
+ return path;
+}
 // Same-origin requests with X-Requested-With need no CORS preflight; with it, Access answers an expired session with 401
 // instead of a redirect, and redirect:'manual' catches the redirect anyway if Access is configured without that behaviour.
-function raw(path,opts={}){return fetch(path,{credentials:'same-origin',cache:'no-store',redirect:'manual',...opts,headers:{...(opts.headers||{}),'X-Requested-With':'XMLHttpRequest'}});}
+function raw(path,opts={}){return fetch(appPath(path),{credentials:'same-origin',cache:'no-store',redirect:'manual',...opts,headers:{...(opts.headers||{}),'X-Requested-With':'XMLHttpRequest'}});}
 const lapsed=r=>r.status===401||r.type==='opaqueredirect';
 async function authFetch(path,opts={}){const r=await raw(path,opts);if(lapsed(r)){expired();throw new Expired();}return r;}
 // One bootstrap fetch per load, shared by the start control (voice-client.js) and ATLAS_APP.bootInfo (app.js).
@@ -47,7 +53,7 @@ function clean(){if(pending.size)return false;if(document.querySelector('dialog[
 function recent(){try{const t=Number(sessionStorage.getItem(REAUTH));return !!t&&Date.now()-t<WINDOW;}catch{return true;}} // unknown: never risk a reload loop
 function stamp(){try{sessionStorage.setItem(REAUTH,String(Date.now()));}catch{}}
 // A real reload of '/' (or '/#start'): location.replace('/#start') from '/' would only change the fragment and reload nothing.
-function reloadHome(hash=''){try{history.replaceState(null,'','/'+hash);}catch{}location.reload();}
+function reloadHome(hash=''){const base=appPath('/');try{history.replaceState(null,'',base+hash);}catch{}location.reload();}
 function settle(){if(clean()&&!recent()){stamp();reloadHome(resume==='start'?'#start':'');return;}showBanner();}
 function showBanner(){bannerOn=true;const el=$('authBanner');if(el)el.hidden=false;paint();}
 function paint(){failures=failures.filter(t=>Date.now()-t<WINDOW);const f=$('authFallback');if(f)f.hidden=failures.length<2;const r=$('authReload');if(r)r.disabled=!(backedUp||clean());}
@@ -69,7 +75,7 @@ try{const ch=new BroadcastChannel('atlas-auth');ch.onmessage=e=>{if(e.data==='ok
 $('authReconnect')?.addEventListener('click',reconnect);
 $('authBackup')?.addEventListener('click',()=>{$('backupQuick')?.click();backedUp=true;paint();});
 $('authReload')?.addEventListener('click',()=>{if(!(backedUp||clean()))return;stamp();reloadHome();});
-window.AtlasAuth={fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,
+window.AtlasAuth={fetch:authFetch,expired,reconnect,Expired,pending,boot,probe,path:appPath,
  onSignedIn:fn=>{if(typeof fn==='function')signedInFns.push(fn);},
  dirty:fn=>{if(typeof fn!=='function')return ()=>{};checks.add(fn);return ()=>checks.delete(fn);},
  get mode(){return mode;}};

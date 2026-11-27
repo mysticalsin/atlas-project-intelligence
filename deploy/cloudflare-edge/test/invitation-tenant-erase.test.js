@@ -115,7 +115,7 @@ test('a privacy erase removes or scrubs the subject\'s sent and received invitat
     assert.equal(row.status, 'open');
     assert.equal(row.tenant, A);
     assert.match(row.source, /^erased:[0-9a-f]{12}$/);
-    assert.equal(row.source.toLowerCase().includes('ada'), false);
+    assert.equal([SUBJECT, MAIL].some(address => row.source.toLowerCase().includes(address.toLowerCase())), false);
   }
   assert.equal(sent.find(row => row.id === 'sent-email').email, OTHER);
   assert.equal(sent.find(row => row.id === 'sent-mail').email, 'sam@example.test');
