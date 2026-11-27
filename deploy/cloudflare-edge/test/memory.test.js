@@ -35,9 +35,11 @@ test('project document: complete, labelled self-reported, client details scrubbe
   assert.doesNotMatch(d, /Zebracorp|Lyon|Head of Claims/); assert.match(d, /the client in the client had slow claims/);
   const items = retainItems(P, '2026-09-27T10:00:00.000Z');
   assert.equal(items[0].document_id, 'project-p-123'); assert.deepEqual(items[0].tags, ['atlas', 'project:p-123']); assert.equal(items[0].update_mode, 'replace');
-  assert.doesNotMatch(JSON.stringify(items), /Zebracorp|Head of Claims/); assert.match(items[1].document_id, /^conversation-p-123-20260927100000$/);
+  assert.doesNotMatch(JSON.stringify(items), /Zebracorp|Head of Claims/); assert.match(items[1].document_id, /^conversation-p-123-20260927100000000$/);
   assert.throws(() => retainItems({ ...P, localId: '' }), /project id/);
-  assert.equal(scrub('ab', { name: 'ab' }), 'ab', 'names under three characters are not scrubbed (too ambiguous)');
+  assert.equal(scrub('ab', { name: 'ab' }), 'the client', 'a name of 2 characters is masked in its stored spelling');
+  assert.equal(scrub('AB', { name: 'ab' }), 'the client', 'and in its upper-case spelling');
+  assert.equal(scrub('ab', { name: 'AB' }), 'ab', 'the lower-case spelling of a stored upper-case pair stays');
 });
 
 test('Hindsight client: verified endpoints, Bearer key, bank configured once, async retain, tag-scoped recall', async () => {

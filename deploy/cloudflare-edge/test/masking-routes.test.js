@@ -76,9 +76,10 @@ test('requirement edits on a bid whose map is full still give the author every t
 });
 
 // ---- Integration (review #12): the display rule wired at every author-facing model output. Lee's draft names the
-// client 'Orange' (a stoplist word, matched case-sensitively), which Kim cannot open. Kim's own lower-case "orange"
-// reaches the model unmasked; the model echoes it capitalised. Kim must read her own word back, while a library name
-// she never typed ('Zebracorp') is still masked, and every other view keeps the full masking.
+// client 'Orange' (a stoplist word of 3 or more characters, matched in every case), which Kim cannot open. Kim's
+// lower-case "orange" is masked as a whole word before the model. Alias 'Heron' matches no library client, so the
+// first company placeholder is [Company 1] and the map stores the typed span "orange". A library name she never
+// typed ('Zebracorp') stays masked, and every other view keeps the full masking.
 const REV = { email: 'rev@mantu.com', role: 'reviewer', mail: 'rev@mantu.com' };
 async function orangeLibrary(complete) {
   const l = new Library(memorySql(), { complete, embed: null });
@@ -96,11 +97,11 @@ test('display rule wired (review #12): bid create keeps the author\'s own echoed
   const { l } = await orangeLibrary(async m => { seen.push(m[1].content); const first = m[1].content.split(/(?<=\.)\s/)[0];
     return JSON.stringify({ requirements: [{ text: cap(first), kind: 'capability', must: true }, { text: 'Claims routing like Zebracorp is needed.', kind: 'capability' }], customer: {} }); });
   const b = await bids.routes({ method: 'POST', parts: ['bids'], body: { title: 'Juice bid', alias: 'Heron', prospectNames: [], briefText: 'orange juice supply chain experience is required for this tender. More text here.' }, user: KIM, lib: l, env: {} });
-  assert.match(seen[0], /^orange juice/, 'the lower-case stoplist word reached the model as typed');
-  assert.deepEqual(b.body.requirements.map(r => r.text), ['Orange juice supply chain experience is required for this tender.', 'Claims routing like another client is needed.']);
+  assert.match(seen[0], /^\[Company 1\] juice/);
+  assert.deepEqual(b.body.requirements.map(r => r.text), ['orange juice supply chain experience is required for this tender.', 'Claims routing like another client is needed.']);
   const other = await bids.routes({ method: 'GET', parts: ['bids', b.body.id], body: null, user: REV, lib: l, env: {} });
   assert.equal(other.body.view, 'other');
-  assert.deepEqual(other.body.requirements.map(r => r.text), ['another client juice supply chain experience is required for this tender.', 'Claims routing like another client is needed.']);
+  assert.deepEqual(other.body.requirements.map(r => r.text), ['[company] juice supply chain experience is required for this tender.', 'Claims routing like another client is needed.']);
 });
 
 test('display rule wired (review #12): Ask, recommend and slides give the author their own echoed word back and still mask other library names', async () => {
@@ -113,14 +114,14 @@ test('display rule wired (review #12): Ask, recommend and slides give the author
   });
   const a = await ask.routes({ method: 'POST', parts: ['ask'], body: { question: 'Which project covered orange juice supply chains?' }, user: KIM, lib: l, env: {} });
   assert.ok(a.body.results.length);
-  for (const r of a.body.results) { assert.equal(r.why, 'Orange juice supply chains match.'); assert.equal(r.caveat, 'Unlike another client, smaller.'); }
+  for (const r of a.body.results) { assert.equal(r.why, 'another client juice supply chains match.'); assert.equal(r.caveat, 'Unlike another client, smaller.'); }
   const rec = await l.recommend(KIM, { query: 'Meeting an orange juice producer about supply chains' });
   assert.ok(rec.results.length);
-  for (const r of rec.results) { assert.equal(r.why, 'Orange juice supply chains match.'); assert.deepEqual(r.transferable, ['Orange juice planning']); assert.equal(r.caveat, 'Unlike another client, smaller.'); }
+  for (const r of rec.results) { assert.equal(r.why, 'another client juice supply chains match.'); assert.deepEqual(r.transferable, ['another client juice planning']); assert.equal(r.caveat, 'Unlike another client, smaller.'); }
   const s = await l.slides(KIM, ownId, { context: 'Pitch to an orange juice producer' });
-  assert.equal(s.title, 'Orange juice logistics');
-  assert.equal(s.summary, 'Orange juice planning, unlike another client.');
-  assert.equal(s.sections[0].bullets[0].text, 'Orange juice supply chain was slow.');
+  assert.equal(s.title, 'another client juice logistics');
+  assert.equal(s.summary, 'another client juice planning, unlike another client.');
+  assert.equal(s.sections[0].bullets[0].text, 'another client juice supply chain was slow.');
 });
 
 test('Ask (spec §2.3 "full access shown raw"): a reader with full access gets the raw source name, like the raw sentence', async () => {

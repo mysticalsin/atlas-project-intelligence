@@ -4,6 +4,8 @@
 // Memory is self-reported continuity, never evidence. Confidential client details are scrubbed before retention.
 // API contract checked against @vectorize-io/hindsight-client 0.10.1: /v1/default/banks/{bank_id}/..., Bearer key.
 import { TENANT_ID, tenantEnforced } from './authz.js';
+import { maskOwnClient } from './name-match.js';
+import { contactLead } from './review.js';
 
 // Hindsight Cloud (docs.hindsight.vectorize.io/api-integration). HINDSIGHT_URL overrides it for a self-hosted server.
 export const HINDSIGHT_CLOUD = 'https://api.hindsight.vectorize.io';
@@ -33,12 +35,12 @@ export async function bankId(env, sub, tenant = '') {
 const str = (v, n) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, n) : '';
 const safeId = v => String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
 
-// Replace every recorded client detail (name, location, contact) wherever it appears.
+// Replace the record's own client name, location and contact as whole words. A name of 3 or more characters,
+// including a stoplist word, is masked in every case. A name of 2 characters is only the stored spelling and the
+// upper-case spelling. A one-word stoplist contact is not a mask.
 export function scrub(text, client = {}) {
-  const names = [client.name, client.location, client.contact].map(x => String(x || '').trim()).filter(x => x.length >= 3);
-  if (!names.length) return text;
-  const re = new RegExp(names.map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-  return String(text).replace(re, 'the client');
+  if (typeof text !== 'string') return text;
+  return maskOwnClient(client, contactLead(client?.contact))(text);
 }
 
 // The project document retained after an interview: the consultant's words and ATLAS's report, labelled self-reported.
@@ -110,7 +112,7 @@ export function retainItems(payload, now = new Date().toISOString()) {
   const tags = ['atlas', 'project:' + localId];
   const items = [{ content: projectDocument(payload), context: 'ATLAS project interview state (self-reported, not evidence)', document_id: 'project-' + localId, timestamp: now, tags, update_mode: 'replace' }];
   const said = str(payload.conversation, 6000);
-  if (said) items.push({ content: scrub(said, payload.client), context: 'What the consultant said in an ATLAS interview on ' + now.slice(0, 10), document_id: 'conversation-' + localId + '-' + now.replace(/\D/g, '').slice(0, 14), timestamp: now, tags });
+  if (said) items.push({ content: scrub(said, payload.client), context: 'What the consultant said in an ATLAS interview on ' + now.slice(0, 10), document_id: 'conversation-' + localId + '-' + now.replace(/\D/g, '').slice(0, 17), timestamp: now, tags });
   return items;
 }
 
