@@ -16,7 +16,16 @@ export const externalOff = env => on(env?.ATLAS_EXTERNAL_OFF);
 export const inboundOff = env => on(env?.ATLAS_INBOUND_OFF);
 const blockedList = env => String(env?.ATLAS_BLOCKED_SUBS || '').toLowerCase().split(',').map(s => s.trim()).filter(s => /^[0-9a-f]{12,64}$/.test(s));
 // Prefix match so the 16-character `subj` of a log line works as well as the full 32-character key.
-export const blockedSubject = (env, subjectKey) => { const k = String(subjectKey || '').toLowerCase(); return !!k && blockedList(env).some(b => k.startsWith(b)); };
+// A longer entry, such as the 64-character HMAC before that cut, still blocks the same key.
+// The shared prefix has to be at least 12 characters, so a one-character subject matches nothing.
+export const blockedSubject = (env, subjectKey) => {
+  const k = String(subjectKey || '').toLowerCase();
+  if (!k) return false;
+  return blockedList(env).some(b => {
+    const n = Math.min(k.length, b.length);
+    return n >= 12 && (k.startsWith(b) || b.startsWith(k));
+  });
+};
 // Names of the switches that are on (no values), for the once-per-isolate flag_state log line.
 export const activeSwitches = env => [['ATLAS_READ_ONLY', readOnly], ['ATLAS_AI_OFF', aiOff], ['ATLAS_EXTERNAL_OFF', externalOff], ['ATLAS_INBOUND_OFF', inboundOff]]
   .filter(([, f]) => f(env)).map(([n]) => n).concat(blockedList(env).length ? ['ATLAS_BLOCKED_SUBS'] : []);
