@@ -19,6 +19,13 @@ REPORT_GROUP = 'atlas-csp'
 _SCRIPT = re.compile(r'<script\b([^>]*)>(.*?)</script', re.S | re.I)
 _TYPE = re.compile(r'''\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''', re.I)
 _JS_TYPES = {'', 'text/javascript', 'application/javascript', 'module', 'text/ecmascript', 'application/ecmascript'}
+# One websocket origin. A semicolon or a second token would be another CSP directive or another host.
+_CONNECT_SOURCE = re.compile(r'^wss?://(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(?::[0-9]{1,5})?$')
+
+
+def connect_source(value):
+    text = '' if value is None else str(value)
+    return text if _CONNECT_SOURCE.fullmatch(text) else ''
 
 
 def _executes(attrs):
@@ -48,7 +55,7 @@ def html_csp(*, hashes=(), connect='', connect_self=True, frame_ancestors="'none
     `connect` is an extra connect-src origin. img_src False omits img-src. trusted_types 'none' is a page that only uses textContent."""
     sources = ' '.join(filter(None, [script_src(hashes) if hashes else '', 'blob:' if script_blob else ''])) or "'none'"
     d = ["default-src 'none'", 'script-src ' + sources, "script-src-attr 'none'", "style-src 'unsafe-inline'"]
-    connect_src = ' '.join(filter(None, ["'self'" if connect_self else '', connect]))
+    connect_src = ' '.join(filter(None, ["'self'" if connect_self else '', connect_source(connect)]))
     if connect_src:
         d.append('connect-src ' + connect_src)
     if img_src is None:
@@ -80,7 +87,8 @@ def meta_csp(**kw):
 
 # The policy the page had before F1, kept only for ATLAS_CSP=report-only: it is ENFORCED while the strict one is reported.
 def legacy_csp(*, connect=''):
-    return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'" + (' ' + connect if connect else '') +
+    source = connect_source(connect)
+    return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'" + (' ' + source if source else '') +
             "; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 

@@ -25,6 +25,10 @@ export const cspMode = env => (String(env?.ATLAS_CSP || '').toLowerCase() === 'r
 
 const quoted = hashes => hashes.map(h => `'${h}'`).join(' ');
 
+// One websocket origin. A semicolon or a second token would be another CSP directive or another host.
+const CONNECT_SOURCE = /^wss?:\/\/(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(?::[0-9]{1,5})?$/;
+const connectSource = value => CONNECT_SOURCE.test(String(value ?? '')) ? String(value) : '';
+
 // Each page names the capabilities it uses. Defaults are the quiet page: no blob, no worker, no media. The voice page opts into
 // scriptBlob, workerBlob and mediaBlob. connectSelf is the page's own origin; `connect` is an extra origin (the websocket).
 // imgSrc false omits img-src. trustedTypes 'none' is a page that only uses textContent.
@@ -34,7 +38,7 @@ export function htmlCsp({
 } = {}) {
   const script = [hashes.length ? quoted(hashes) : '', scriptBlob ? 'blob:' : ''].filter(Boolean).join(' ') || "'none'";
   const d = ["default-src 'none'", 'script-src ' + script, "script-src-attr 'none'", "style-src 'unsafe-inline'"];
-  const connectSrc = [connectSelf ? "'self'" : '', connect].filter(Boolean).join(' ');
+  const connectSrc = [connectSelf ? "'self'" : '', connectSource(connect)].filter(Boolean).join(' ');
   if (connectSrc) d.push('connect-src ' + connectSrc);
   const img = imgSrc === undefined ? (scriptBlob ? 'data: blob:' : (fontSelf || connectSelf ? 'data:' : '')) : (imgSrc || '');
   if (img) d.push('img-src ' + img);
@@ -55,7 +59,10 @@ export function metaCsp(opts) {
 }
 
 // The policy before F1. Used only while ATLAS_CSP=report-only, when it is the enforced one.
-export const legacyCsp = (connect = '', extra = {}) => `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'${connect ? ' ' + connect : ''}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action ${extra.formAction || "'self'"}; frame-ancestors ${extra.frameAncestors || "'none'"}`;
+export const legacyCsp = (connect = '', extra = {}) => {
+  const source = connectSource(connect);
+  return `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self'${source ? ' ' + source : ''}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action ${extra.formAction || "'self'"}; frame-ancestors ${extra.frameAncestors || "'none'"}`;
+};
 
 // The CSP headers of an HTML response. `opts` is htmlCsp's; `legacy` (a string) replaces the previous policy of a page that never had the default one.
 // enforceStrict: the page keeps its own strict policy as the enforced header even while ATLAS_CSP=report-only.
