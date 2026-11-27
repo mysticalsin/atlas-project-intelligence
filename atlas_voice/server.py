@@ -3,6 +3,8 @@ import asyncio
 import contextlib
 import html
 import json
+import os
+import re
 import secrets
 import shutil
 import sys
@@ -20,6 +22,7 @@ from .identity import Identity, COOKIE
 from .interview import project_context, make_prompt
 from .memory import PrivateMemory
 from .notes import make_notes
+from .csp import REPORTING_ENDPOINTS, RUNTIME_BLOCK, html_csp, legacy_csp, script_hashes
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,12 +30,22 @@ class SessionCancelled(Exception):
     pass
 
 
-def csp(config):
+def _ws_origin(config):
     u = urlsplit(config.origin)
-    ws_origin = ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
-    return ("default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; "
-            f"connect-src 'self' {ws_origin}; img-src data: blob:; font-src 'self'; "
-            "worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+    return ('wss' if u.scheme == 'https' else 'ws') + '://' + u.netloc
+
+
+def csp(config, hashes=(), *, blob=False):
+    """Hash-only script policy. blob=True is the voice page (the worklet). Sign-in and JSON leave it false."""
+    return html_csp(hashes=tuple(hashes), connect=_ws_origin(config), script_blob=blob, worker_blob=blob, media_blob=blob)
+
+
+def csp_headers(config, hashes=(), *, blob=False):
+    connect = _ws_origin(config)
+    strict = html_csp(hashes=tuple(hashes), connect=connect, script_blob=blob, worker_blob=blob, media_blob=blob)
+    if os.environ.get('ATLAS_CSP', '').lower() == 'report-only':
+        return {'Content-Security-Policy': legacy_csp(connect=connect), 'Content-Security-Policy-Report-Only': strict, 'Reporting-Endpoints': REPORTING_ENDPOINTS}
+    return {'Content-Security-Policy': strict}
 
 
 def same_origin(request, config):
@@ -71,7 +84,16 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
             response.headers['X-Content-Type-Options'] = 'nosniff'
             response.headers['Referrer-Policy'] = 'no-referrer'
             response.headers['Permissions-Policy'] = 'microphone=(self), camera=(), geolocation=()'
-            response.headers['Content-Security-Policy'] = csp(config)
+            if 'Content-Security-Policy' not in response.headers:
+                content_type = response.content_type or ''
+                if 'html' not in content_type:
+                    response.headers['Content-Security-Policy'] = "default-src 'none'; frame-ancestors 'none'"
+                else:
+                    body = response.text if isinstance(getattr(response, 'text', None), str) else ''
+                    # blob: only on the voice page. Sign-in has no script and no worklet, so script-src stays 'none'.
+                    voice = 'id="atlas-runtime"' in body
+                    for key, value in csp_headers(config, script_hashes(body), blob=voice).items():
+                        response.headers[key] = value
         return response
 
     app = web.Application(middlewares=[boundary], client_max_size=131072)
@@ -106,10 +128,13 @@ def create_app(config=None, *, memory_factory=PrivateMemory, notes_fn=make_notes
         text = (ROOT / 'ATLAS_Voice.html').read_text()
         runtime = json.dumps({'subjectKey': subject.subject_key, 'authMode': config.auth_mode,
                               'name': subject.name}).replace('<', '\\u003c')
-        text = text.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
+        block = '<script id="atlas-runtime" type="application/json">' + runtime + '</script>'
+        text = text.replace(RUNTIME_BLOCK, block, 1)
         # Header is authoritative; replace the file's restricted connect-src too.
         text = text.replace("connect-src 'self';", "connect-src 'self' " +
                             config.origin.replace('https://', 'wss://').replace('http://', 'ws://') + ';')
+        if os.environ.get('ATLAS_CSP', '').lower() == 'report-only':
+            text = re.sub(r'<meta\b[^>]*http-equiv="Content-Security-Policy"[^>]*>', '', text, count=1)
         response = web.Response(text=text, content_type='text/html')
         if cookie:
             identity.set_cookie(response, cookie)

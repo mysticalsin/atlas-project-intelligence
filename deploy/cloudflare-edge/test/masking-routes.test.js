@@ -29,7 +29,7 @@ async function published() {
     sources: [{ name: SOURCE, version: 'Zebracorp Bank v2 2026-03-01', excerpt: 'Claims triage times fell from 40 to 12 minutes per claim.' }],
     report: null, validation: { manager: { name: '', email: '' }, managerStaff: true } };
   const s = await l.upsert(LEE, { localId: 'x', reference: data }), row = l.row(s.id);
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
   return { l, id: s.id };
 }
 const onePagerEvidence = async (l, user, refId) => {
@@ -172,7 +172,7 @@ test('Library.get public view masks a one-word contact lead under the contact ru
   const mk = async (localId, contact, answer) => {
     const s = await l.upsert(LEE, { localId, reference: { title: 'Claims ' + localId, sector: 'Insurance', consultant: { name: 'Lee', role: 'Eng' }, client: { name: 'Zebracorp Bank', location: 'Lyon', contact }, details: DETAILS,
       answers: [answer, '', '', '', '', ''] } });
-    const row = l.row(s.id); l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+    const row = l.row(s.id); l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
     return s.id;
   };
   const a = await mk('a', 'Dupont, CFO', 'Dupont approved the rollout; DUPONT signed. We will ship.');

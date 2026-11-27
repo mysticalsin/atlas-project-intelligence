@@ -7,7 +7,7 @@ import * as winloop from '../src/winloop.js';
 import * as bids from '../src/bids.js';
 import * as claims from '../src/claims.js';
 import { splitSentences } from '../src/snippets.js';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { memorySql } from './sqlite.js';
 
 const LEE = { email: 'lee@mantu.com', role: 'user' }, ALEX = { email: 'alex@mantu.com', role: 'user' }, KIM = { email: 'kim@mantu.com', role: 'user' }, REV = { email: 'rev@mantu.com', role: 'reviewer' };
@@ -17,15 +17,15 @@ const ref = (title, answers, extra = {}) => ({ title, stage: 'Production', secto
   validation: { manager: { name: '', email: '' }, managerStaff: true } });
 async function publish(l, owner, data) {
   const s = await l.upsert(owner, { localId: data.title, reference: data }), row = l.row(s.id);
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
   return s.id;
 }
 let seq = 0;
 function seed(l, outcome, uses, owner = ALEX.email) {
   bids.ensure(l);
   const id = 'bid' + (++seq), at = '2026-09-29T00:00:' + String(seq % 60).padStart(2, '0') + '.000Z', decided = outcome !== 'pending';
-  l.sql.exec('INSERT INTO bids (id, owner, alias, status, outcome, decided_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, owner, 'alias', decided ? 'decided' : 'open', outcome, decided ? at : null, at, at);
-  for (const [refId, type] of uses) l.sql.exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, 1, ?, ?, ?)', id, refId, type, at + seq, owner);
+  sqlOf(l).exec('INSERT INTO bids (id, owner, alias, status, outcome, decided_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, owner, 'alias', decided ? 'decided' : 'open', outcome, decided ? at : null, at, at);
+  for (const [refId, type] of uses) sqlOf(l).exec('INSERT INTO bid_references (bid_id, ref_id, revision, proof_type, used_at, used_by) VALUES (?, ?, 1, ?, ?, ?)', id, refId, type, at + seq, owner);
   return id;
 }
 const lib = () => new Library(memorySql(), { now: () => '2026-09-29T12:00:00.000Z' });
@@ -112,10 +112,10 @@ test('proofTypeOf: quantified from the outcome or evidence answer, confirmed fro
   assert.deepEqual([q, e, plain].map(id => winloop.proofTypeOf(l, l.row(id))), [Q, Q, QL]);
   claims.ensure(l);
   const sentence = splitSentences(l.row(q).data.answers[3])[0];
-  l.sql.exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", q, sentence);
+  sqlOf(l).exec("INSERT INTO claims (id, ref_id, revision, topic, idx, text, sentence_hash, status, by_mail, at, confirmed_revision, created_by, created_at) VALUES ('c1', ?, 1, 3, 0, ?, 'h1', 'manager_confirmed', 'sam@mantu.com', 'now', 1, 'lee@mantu.com', 'now')", q, sentence);
   assert.equal(winloop.proofTypeOf(l, l.row(q)), claims.READY ? QC : Q, 'confirmed once T3 counts the claim');
   const bid = seed(l, 'won', []);
-  l.sql.exec('UPDATE refs SET data = json_set(data, \'$.answers[3]\', ?) WHERE id = ?', 'No figures any more.', q);
+  sqlOf(l).exec('UPDATE refs SET data = json_set(data, \'$.answers[3]\', ?) WHERE id = ?', 'No figures any more.', q);
   bids.ensure(l); await bids.routes({ method: 'POST', parts: ['bids', bid, 'use'], body: { refIds: [q] }, user: { ...ALEX, mail: ALEX.email }, lib: l, env: {} });
   assert.equal(l.rows('SELECT proof_type FROM bid_references WHERE bid_id = ?', bid)[0].proof_type, QL, 'the type is computed when the use is recorded');
 });
@@ -132,7 +132,7 @@ test('F7.4 #5 guidance: null under the thresholds, quantified before confirmed, 
   assert.deepEqual(g, { hint: 'quantified', decided: 14, basis: 'Quantified proof won 67% of 9 decided bids; qualitative 0% of 5.' });
   assert.doesNotMatch(JSON.stringify(g), /r1|r2|@/, 'aggregate only');
   const cached = winloop.guidance(l); assert.deepEqual(cached, g);
-  l.sql.exec("UPDATE bids SET outcome = 'won' WHERE id IN (SELECT bid_id FROM bid_references WHERE ref_id = 'r2')");
+  sqlOf(l).exec("UPDATE bids SET outcome = 'won' WHERE id IN (SELECT bid_id FROM bid_references WHERE ref_id = 'r2')");
   assert.equal(winloop.guidance(l).hint, null, 'an outcome change invalidates the cache (quantified 67% vs qualitative 100%)');
   const m = lib();
   for (let i = 0; i < 5; i++) seed(m, 'won', [['a', QC]]);

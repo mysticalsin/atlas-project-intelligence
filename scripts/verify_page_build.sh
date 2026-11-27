@@ -2,13 +2,28 @@
 # Each comparison is its own command. A failing cmp is not hidden inside an && list.
 # The trap is installed before mktemp. INT exits 130 and TERM exits 143; EXIT then removes the snapshot.
 # A signal can arrive before the trap is installed. SIGKILL cannot be trapped.
+# The build targets are removed before each build, so a build that writes somewhere else cannot pass on a stale page.
 set -euo pipefail
 unset ATLAS_HOME_URL
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONIOENCODING=utf-8
 cd "$(dirname "$0")/.."
 once=
-cleanup() { rm -f "$once"; }
+committed=
+aliases=(ATLAS_Voice.html ATLAS_Project_Intelligence.html ATLAS_Intelligence.html ATLAS_Voice_Studio.html)
+cleanup() {
+  if [[ -n "${committed:-}" && -f "$committed" ]]; then
+    local alias
+    for alias in "${aliases[@]}"; do
+      if [[ ! -f "$alias" ]]; then
+        cp "$committed" "$alias" || true
+      fi
+    done
+  fi
+  rm -f "$once"
+  if [[ -n "${committed:-}" ]]; then rm -f "$committed"; fi
+  return 0
+}
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
@@ -16,13 +31,43 @@ once=$(mktemp "${TMPDIR:-/tmp}/atlas-page.XXXXXX")
 if [[ "${ATLAS_PAGE_HOLD:-}" == "1" ]]; then
   while true; do sleep 0.1; done
 fi
+if [[ ! -f ATLAS_Voice.html ]]; then
+  echo 'missing: committed ATLAS_Voice.html is not there' >&2
+  exit 23
+fi
+committed=$(mktemp "${TMPDIR:-/tmp}/atlas-committed.XXXXXX")
+cp ATLAS_Voice.html "$committed"
+rm -f "${aliases[@]}"
 python3 build.py
+if [[ ! -f ATLAS_Voice.html ]]; then
+  echo 'missing: build.py did not write ATLAS_Voice.html' >&2
+  exit 23
+fi
+if ! cmp ATLAS_Voice.html "$committed"; then
+  echo 'cmp-committed: the fresh build does not match the committed page' >&2
+  exit 24
+fi
+for alias in "${aliases[@]}"; do
+  if [[ ! -f "$alias" ]]; then
+    echo "missing: build.py did not write $alias" >&2
+    exit 23
+  fi
+  if ! cmp ATLAS_Voice.html "$alias"; then
+    echo "cmp-alias: $alias does not match the built page" >&2
+    exit 25
+  fi
+done
 cp ATLAS_Voice.html deploy/cloudflare-edge/src/atlas.html
 cp ATLAS_Voice.html "$once"
 if [[ "${ATLAS_PAGE_CORRUPT_FIRST:-}" == "1" ]]; then
   printf 'corrupt\n' > "$once"
 fi
+rm -f "${aliases[@]}"
 python3 build.py
+if [[ ! -f ATLAS_Voice.html ]]; then
+  echo 'missing: build.py did not write ATLAS_Voice.html' >&2
+  exit 23
+fi
 if ! cmp ATLAS_Voice.html "$once"; then
   echo 'cmp-first: the first build output does not match the second' >&2
   if [[ -n "${ATLAS_PAGE_STAGE_LOG:-}" ]]; then printf 'cmp-first\n' >> "$ATLAS_PAGE_STAGE_LOG"; fi

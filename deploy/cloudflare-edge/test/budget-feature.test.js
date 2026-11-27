@@ -41,7 +41,8 @@ test('a story rating refused for the month is not retried as a network error', a
   assert.equal(calls, 1);
 });
 
-const OWNER = { email: 'alex@mantu.com', role: 'user' };
+const TENANT = '11111111-1111-4111-8111-111111111111';
+const OWNER = { email: 'alex@mantu.com', role: 'user', tenant: TENANT };
 const STORY = () => ({ title: 'Claims triage alias', stage: 'Production', sector: 'Insurance', consultant: { name: 'Alex', role: 'Data engineer' },
   client: { name: 'Zebracorp', location: 'Lyon', contact: 'Head of Claims' },
   details: { projectId: 'PRJ-1', country: 'France', start: '2024-03', end: '2024-11', teamSize: 6, teamRoles: ['Data engineer'], technologies: ['Python'], deliverables: ['Routing model'], serviceLines: ['Data & AI'],
@@ -81,7 +82,7 @@ test('an exhausted month does not fall through to another rating model, store a 
     });
     await grant(l);
     const id = (await l.upsert(OWNER, { localId: 'p1', reference: STORY() })).id;
-    await assert.rejects(() => l.review(budget === 'background' ? { email: 'atlas', role: 'admin' } : OWNER, id, { budget }), e => e.name === 'BudgetExhausted' && e.code === BUDGET_CODE && e.message === BUDGET_MESSAGE);
+    await assert.rejects(() => l.review(budget === 'background' ? { email: 'atlas', role: 'admin', tenant: TENANT } : OWNER, id, { budget }), e => e.name === 'BudgetExhausted' && e.code === BUDGET_CODE && e.message === BUDGET_MESSAGE);
     assert.equal(fetches, 1, budget);
     assert.equal(completes, 0, budget);
     assert.equal(l.row(id).state.quality, null, budget);
@@ -97,8 +98,8 @@ test('ask and recommend stay 200 with the lexical cards and the one sentence', a
   });
   const id = (await l.upsert(OWNER, { localId: 'p1', reference: STORY() })).id;
   const row = l.row(id);
-  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', by: 't', at: '', note: '' } }, 't', 'validated', '');
-  const headers = { 'content-type': 'application/json', 'x-atlas-user': 'kim@mantu.com', 'x-atlas-role': 'user', 'x-atlas-email': 'kim@mantu.com' };
+  l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved', by: 't', at: '', note: '' } }, 't', 'validated', '');
+  const headers = { 'content-type': 'application/json', 'x-atlas-user': 'kim@mantu.com', 'x-atlas-role': 'user', 'x-atlas-email': 'kim@mantu.com', 'x-atlas-tenant': TENANT };
   const post = (path, body) => libraryRoutes(new Request('https://atlas.test/api/library/' + path, { method: 'POST', headers, body: JSON.stringify(body) }), l);
   const ask = await post('ask', { question: 'Which claims triage references do we have?' });
   const recommend = await post('recommend', { query: 'I am meeting an insurer about claims triage routing.' });

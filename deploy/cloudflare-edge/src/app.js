@@ -4,7 +4,7 @@
 import { CHAT_TOOLS, SPEAKING_LIMIT_S } from './policy.generated.js';
 import { Session, MAX_SECONDS } from './session.js';
 import { wav, to16k } from './speech.js';
-import { classify } from './classify.js';
+import { classify, projectState } from './classify.js';
 import { bankId, memoryConfigured } from './memory.js';
 import { sheetRoutes } from './sheet.js';
 import { detectedLanguage, NATIVE_VOICES, normalize } from './languages.js';
@@ -20,6 +20,17 @@ import { usageFrom } from './usage.js';
 import { httpBudget } from './budget-stop.js';
 import { audioMs } from './units.js';
 import { ledgerAccessOk, spendRoute } from './spend-route.js';
+import { cspMode, htmlCspHeaders, inlineScriptHashes, runtimeBlock, withoutMetaCsp, PAGE_SCRIPT_HASHES } from './csp.js';
+import { RETENTION } from './policy.generated.js';
+import { baseSecurityHeaders, DATA_CSP, secure } from './security-headers.js';
+import { aiOff, assertAiOn, blockedSubject, externalOff, inboundOff, readOnly, securityFlags, AI_OFF_MESSAGE, BLOCKED_MESSAGE, EXTERNAL_OFF_MESSAGE, INBOUND_OFF_MESSAGE, INTERVIEW_PAUSED_MESSAGE, READ_ONLY_MESSAGE } from './kill-switches.js';
+import { limitOf } from './ratelimit.js';
+import { announceFlags, ipHash, requestLog, secEvent } from './security-log.js';
+import { boundedBytes, boundedText } from './bounded.js';
+import { cspReport } from './csp-report.js';
+import { renderNoticeHtml } from './privacy.js';
+import { timingSafe } from './timing-safe.js';
+import { auditKey } from './audit-chain.js';
 
 const enc = new TextEncoder();
 // One voice for everyone: @cf/deepgram/aura-2-en "harmonia" (Deepgram: empathetic, clear, calm, confident).
@@ -81,7 +92,6 @@ export const SIGNED_IN_HTML = `<!doctype html><html lang="en"><head><meta charse
 <body><p>You're signed in. This window closes by itself.</p>
 <script>try{new BroadcastChannel('atlas-auth').postMessage('ok')}catch(e){}setTimeout(function(){window.close()},400)</script></body></html>`;
 
-function timingSafe(a, b) { let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; }
 function csrfOk(header, csrf) {
   const a = String(header || ''), b = String(csrf || '');
   if (!a || a.length !== b.length) return false;
@@ -93,34 +103,61 @@ async function hmac(secret, value) {
   return hex(await crypto.subtle.sign('HMAC', key, enc.encode(value)));
 }
 
-function headers(env, extra = {}) {
-  const ws = env.ORIGIN.replace('https://', 'wss://');
-  return { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
-    'Permissions-Policy': 'microphone=(self), camera=(), geolocation=()',
-    'Content-Security-Policy': `default-src 'none'; script-src 'unsafe-inline' blob:; style-src 'unsafe-inline'; connect-src 'self' ${ws}; img-src data: blob:; font-src 'self'; worker-src blob:; media-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : ''}`,
-    ...extra };
+function connectOrigin(env) {
+  return String(env.ORIGIN || '').replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
 }
-const json = (env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+function headers(env, extra = {}) {
+  return { ...baseSecurityHeaders(), 'Content-Security-Policy': DATA_CSP, ...extra };
+}
+const json = (env, body, status = 200, extra = {}) => new Response(JSON.stringify(body), { status, headers: headers(env, { 'Content-Type': 'application/json', ...extra }) });
+const VOICE_PAGE = { scriptBlob: true, workerBlob: true, mediaBlob: true, fontSelf: true, trustedTypes: 'atlas-html', connectSelf: true };
+const QUIET_PAGE = { connectSelf: false, scriptBlob: false, imgSrc: false, fontSelf: false, workerBlob: false, mediaBlob: false, trustedTypes: 'none', formAction: "'none'" };
+async function htmlResponse(env, body, opts = {}) {
+  const { hashes = null, reportOnlyStrip = false, connect = '', ...caps } = opts;
+  const use = hashes || await inlineScriptHashes(body);
+  const policy = htmlCspHeaders(env, { hashes: use, connect, ...caps });
+  const upgrade = String(env.ORIGIN || '').startsWith('https:') ? '; upgrade-insecure-requests' : '';
+  if (policy['Content-Security-Policy']) policy['Content-Security-Policy'] += upgrade;
+  const html = reportOnlyStrip && cspMode(env) === 'report-only' ? withoutMetaCsp(body) : body;
+  return new Response(html, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8', ...policy }) });
+}
+async function consumeLimit(env, slog, name, checks) {
+  const unavailable = () => json(env, { error: 'The request could not be limited, so it was not run.', code: 'LIMIT_UNAVAILABLE' }, 503);
+  if (!env.INTERVIEW) return unavailable();
+  try {
+    const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(String(name))).fetch(new Request('https://atlas.internal/api/limit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checks }) }));
+    if (res.status === 429) {
+      const j = await res.json().catch(() => ({}));
+      const retry = Number(j.retryAfter || res.headers.get('retry-after') || 1);
+      const bucket = checks[0]?.bucket || 'limit';
+      slog.log('rate_limited', 'RATE:' + String(bucket).toUpperCase().replace(/-/g, '_'), 429, { bucket });
+      return json(env, { error: 'Too many requests. Please wait a little and try again.', retryAfter: retry }, 429, { 'Retry-After': String(retry) });
+    }
+    if (!res.ok) return unavailable();
+    return null;
+  } catch { return unavailable(); }
+}
+async function subjectPseudonym(env, sub) {
+  if (env.LOG_SALT) return (await hmac(env.LOG_SALT, sub)).slice(0, 32);
+  if (String(env.DATA_MODE || '').toLowerCase() === 'production') return null;
+  if (env.CSRF_SECRET) return (await hmac('subject-v1:' + env.CSRF_SECRET, sub)).slice(0, 32);
+  return '';
+}
+const NOT_COVERED = [
+  { store: 'interview-checkpoint', exported: false, erased: false, reason: 'The Interview Durable Object was not opened. Its checkpoint was not exported or erased.' },
+  { store: 'interview-consent', exported: false, erased: false, reason: 'Consent state on the Interview object was not exported or erased.' },
+  { store: 'interview-memory', exported: false, erased: false, reason: 'Private memory on the Interview object was not exported or erased.' },
+];
 // Spoken Ask audio: 0.1 s to 32 s of 16-bit mono PCM at 24 kHz (the UI records at most 30 s).
 const AUDIO_MIN = 4800, AUDIO_MAX = 1536000;
-// Reads at most `max` bytes of a request body; null as soon as it is longer (the declared length can be absent or wrong).
-async function boundedBytes(request, max) {
-  if (!request.body) return new Uint8Array(0);
-  const reader = request.body.getReader(), parts = [];
-  let n = 0;
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    n += value.length;
-    if (n > max) { await reader.cancel().catch(() => {}); return null; }
-    parts.push(value);
-  }
-  const out = new Uint8Array(n);
-  let at = 0;
-  for (const p of parts) { out.set(p, at); at += p.length; }
-  return out;
-}
+const HOUR_MS = 36e5;
 
+// Early check before LIBRARY.get for the cron and both bearer ingresses. The Library constructor is the
+// refusal for every other open. This stays so those three paths do not construct the object.
+function rejectUnkeyedAudit(env) {
+  if (auditKey(env) != null) return null;
+  return json(env, { error: 'LOG_SALT is not set.', code: 'LOG_SALT' }, 503);
+}
 // The cron and the two bearer ingresses share one configured tenant. A caller header or JSON
 // field is never the tenant. When isolation is on, a missing or malformed ATLAS_SYSTEM_TENANT
 // stops the request before the durable object. The local demo stays on the blank sandbox.
@@ -152,12 +189,33 @@ function systemForwardHeaders(user, scope) {
   return { 'Content-Type': 'application/json', 'x-atlas-user': user, 'x-atlas-role': 'system', 'x-atlas-email': '', 'x-atlas-idp': 'e30', 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': scope.flag };
 }
 
+const noopLog = { log() {}, identify() {}, async flush() {} };
 // flagsOf: the bootstrap feature flags (tests pass flags with D1 approved to exercise /api/transcribe before it flips).
-export async function handle(request, env, page, { waitUntil = p => p, flagsOf = flags } = {}) {
+export async function handle(request, env, page, opts = {}) {
+  const slog = opts.log ? requestLog(request, env, opts.log) : noopLog;
+  if (opts.log) await announceFlags(env, securityFlags(env), opts.log);
+  try { return secure(await route(request, env, page, { waitUntil: opts.waitUntil || (p => p), flagsOf: opts.flagsOf || flags, slog })); }
+  catch (e) {
+    if (e?.status === 503 && e?.code === 'LOG_SALT') return secure(json(env, { error: e.message, code: 'LOG_SALT' }, 503));
+    return secure(new Response('Something went wrong.', { status: 500, headers: { 'content-type': 'text/plain; charset=utf-8' } }));
+  }
+  finally { await slog.flush(); }
+}
+async function route(request, env, page, { waitUntil, flagsOf, slog }) {
   {
     const url = new URL(request.url);
-    if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403 });
-    if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500 });
+    if (!env.ORIGIN || url.origin !== env.ORIGIN) return new Response('Host is not the configured ATLAS origin.', { status: 403, headers: headers(env) });
+    if (!env.CSRF_SECRET) return new Response('Deployment is not configured (CSRF_SECRET).', { status: 500, headers: headers(env) });
+    if (url.pathname === '/api/csp-report' && request.method === 'POST') {
+      const hashed = await ipHash(env, request.headers.get('cf-connecting-ip') || '');
+      if (hashed == null) return json(env, { error: 'Deployment is not configured (LOG_SALT).', code: 'LOG_SALT' }, 503);
+      const name = 'csp:' + (hashed || 'anon');
+      return cspReport(request, slog, (bucket, max, windowMs) => consumeLimit(env, slog, name, [{ bucket, max, windowMs }]));
+    }
+    const mutating = (request.method !== 'GET' && request.method !== 'HEAD') || request.headers.get('Upgrade') === 'websocket';
+    if (readOnly(env) && mutating) { slog.log('kill_switch', 'READ_ONLY', 503); return json(env, { error: READ_ONLY_MESSAGE, code: 'READ_ONLY' }, 503, { 'Retry-After': '300' }); }
+    const inboundPath = (url.pathname === '/api/triggers' && request.method === 'POST') || (url.pathname === '/api/directory/push' && request.method === 'POST') || (url.pathname === '/api/teams/messages' && request.method === 'POST') || (url.pathname === '/teams/tab' && request.method === 'GET');
+    if (inboundOff(env) && inboundPath) { slog.log('inbound_off', 'INBOUND_OFF', 503); return json(env, { error: INBOUND_OFF_MESSAGE, code: 'INBOUND_OFF' }, 503); }
     // Before triggers, directory push, voice, memory, or the library. A production flag must not
     // disable tenant checks or turn on the local persona switch.
     const demoConflict = productionDemoConflict(env);
@@ -165,12 +223,14 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Project-management system trigger: its own bearer secret (Access bypass on this path only; see docs/INTEGRATIONS.md).
     if (url.pathname === '/api/triggers' && request.method === 'POST') {
       const secret = env.TRIGGER_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-      if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) return json(env, { error: 'Unauthorized.' }, 401);
-      if (Number(request.headers.get('Content-Length') || 0) > 16384) return json(env, { error: 'Request too large.' }, 413);
+      if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) { slog.log('bearer_fail', 'BEARER_INVALID', 401); return json(env, { error: 'Unauthorized.' }, 401); }
+      if (Number(request.headers.get('Content-Length') || 0) > 16384) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
       const raw = await request.text();
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const unkeyed = rejectUnkeyedAudit(env);
+      if (unkeyed) return unkeyed;
       const fwd = new Request(new URL('/api/library/trigger', request.url), { method: 'POST', body: raw, headers: systemForwardHeaders('pm-system', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -179,7 +239,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // this path only). Production deployments only; forwarded as role `system` to the directory import (source dna).
     if (url.pathname === '/api/directory/push' && request.method === 'POST') {
       const secret = env.DIRECTORY_PUSH_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
-      if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) return json(env, { error: 'Unauthorized.' }, 401);
+      if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) { slog.log('bearer_fail', 'BEARER_INVALID', 401); return json(env, { error: 'Unauthorized.' }, 401); }
       const push = pushConfig(env);
       if (push.status !== 'on') return json(env, { error: 'DNA push is not connected.', ...push }, 503);
       const bytes = Number(request.headers.get('Content-Length') || 0) > 262144 ? null : await boundedBytes(request, 262144);
@@ -187,6 +247,8 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, bytes).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
+      const unkeyed = rejectUnkeyedAudit(env);
+      if (unkeyed) return unkeyed;
       const fwd = new Request(new URL('/api/library/directory/import', request.url), { method: 'POST', body: bytes, headers: systemForwardHeaders('dna-push', scope) });
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
@@ -207,7 +269,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     // Identity comes from the verified Access token only. ?as= and &idp= are not read here.
     let who = null;
     try { who = await verifyAccess(request, env); } catch { who = null; }
-    if (!who) return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) });
+    if (!who) { slog.log('authn_fail', 'ACCESS_JWT_MISSING', 401); return new Response('Sign in to use ATLAS.', { status: 401, headers: headers(env) }); }
     // Access email only: an Entra deployment must grant admin through an app role, never a username fallback.
     const elevated = elevatedRole(env, who);
     const admin = elevated === 'admin';
@@ -216,7 +278,26 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     const role = elevated || (env.IDENTITY_SOURCE === 'entra' ? 'user' : (inList(who.email, env.EXTERNAL_EMAILS) ? 'external' : 'user'));
     const tenant = tenantOf(who);
     const tenantFlag = tenantEnforced(env) ? '1' : '0';
-    const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = (await hmac('atlas-subject', who.sub)).slice(0, 32);
+    const csrf = await hmac(env.CSRF_SECRET, who.sub), subjectKey = await subjectPseudonym(env, who.sub);
+    if (subjectKey === null) return json(env, { error: 'This deployment cannot record a subject pseudonym until LOG_SALT is set.', code: 'LOG_SALT' }, 503);
+    slog.identify(subjectKey, role);
+    if (blockedSubject(env, subjectKey)) { slog.log('subject_blocked', 'BLOCKED', 403); return json(env, { error: BLOCKED_MESSAGE, code: 'BLOCKED' }, 403); }
+    if (externalOff(env) && (role === 'external' || url.pathname === '/confirm' || url.pathname.startsWith('/api/library/confirmations'))) {
+      slog.log('kill_switch', 'EXTERNAL_OFF', 403); return json(env, { error: EXTERNAL_OFF_MESSAGE, code: 'EXTERNAL_OFF' }, 403);
+    }
+    const sameOrigin = request.headers.get('Origin') === env.ORIGIN;
+    const csrfHeader = request.headers.get('X-Atlas-CSRF');
+    const sessionGuard = () => {
+      if (!sameOrigin) { slog.log('origin_fail', 'ORIGIN_MISMATCH', 403); return json(env, { error: 'Invalid request origin or session token.' }, 403); }
+      if (!csrfHeader) { slog.log('csrf_fail', 'CSRF_MISSING', 403); return json(env, { error: 'Invalid request origin or session token.' }, 403); }
+      if (!csrfOk(csrfHeader, csrf)) { slog.log('csrf_fail', 'CSRF_MISMATCH', 403); return json(env, { error: 'Invalid request origin or session token.' }, 403); }
+      return null;
+    };
+    async function spend(bucket, max) {
+      // The counter lives on who.sub, not the tenant-scoped interview object. It stores counts only, never story content.
+      // A missing binding or a Durable Object error refuses the request. It does not run it.
+      return consumeLimit(env, slog, who.sub, [{ bucket, max, windowMs: HOUR_MS }]);
+    }
     // Forwarded identity: the library identity (Entra: stable tid:oid; Access: the verified email) and the verified
     // email when it is a valid address (else empty). Always overwritten on every forward.
     const libraryUser = String(env.IDENTITY_SOURCE === 'entra' ? who.sub : who.email || who.sub).toLowerCase(), mail = validEmail(who.email);
@@ -229,26 +310,30 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
         const m = /^\/go\/confirm\/([a-f0-9]{32})$/.exec(url.pathname);
         if (m) return new Response(null, { status: 302, headers: headers(env, { Location: '/confirm#' + m[1] }) });
       }
-      if (!(url.pathname === '/confirm' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) return json(env, { error: 'Not available to external confirmers.' }, 403);
+      if (!(url.pathname === '/confirm' && request.method === 'GET') && !url.pathname.startsWith('/api/library/confirmations/')) { slog.log('external_denied', 'EXTERNAL_ROLE_PATH', 403); return json(env, { error: 'Not available to external confirmers.' }, 403); }
     }
     // Links that survive an interactive sign-in (§3.9): /go/start, /go/{gap,invitation,bid,library,confirm}/<32 hex>.
     // Anything else under /go/ goes home. The ids are random, non-secret and grant nothing without sign-in (a recorded
     // deviation from WOW rule 7); no token ever goes in a path, and nothing here logs the path.
-    if (request.method === 'GET' && url.pathname === '/go/signed-in') return new Response(SIGNED_IN_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (request.method === 'GET' && url.pathname === '/go/signed-in') return htmlResponse(env, SIGNED_IN_HTML, { hashes: await inlineScriptHashes(SIGNED_IN_HTML), ...QUIET_PAGE, enforceStrict: true });
     if (request.method === 'GET' && url.pathname.startsWith('/go/')) {
       const m = /^\/go\/(?:(start)|(gap|invitation|bid|library|confirm)\/([a-f0-9]{32}))$/.exec(url.pathname);
       const to = !m ? '/' : m[1] ? '/#start' : m[2] === 'confirm' ? '/confirm#' + m[3] : '/#' + m[2] + '/' + m[3];
       return new Response(null, { status: 302, headers: headers(env, { Location: to }) });
     }
-    if (url.pathname === '/confirm' && request.method === 'GET') return new Response(CONFIRM_HTML, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+    if (url.pathname === '/confirm' && request.method === 'GET') return htmlResponse(env, CONFIRM_HTML, { hashes: await inlineScriptHashes(CONFIRM_HTML), ...QUIET_PAGE, connectSelf: true, enforceStrict: true });
+    if (url.pathname === '/privacy' && request.method === 'GET') {
+      const notice = renderNoticeHtml(RETENTION);
+      return htmlResponse(env, notice, { hashes: await inlineScriptHashes(notice), ...QUIET_PAGE, reportOnlyStrip: true, enforceStrict: true });
+    }
     if (url.pathname === '/' && request.method === 'GET') {
-      const runtime = JSON.stringify({ subjectKey, authMode: 'access', name: who.email }).replace(/</g, '\\u003c');
-      let body = page.replace('/* SERVER_RUNTIME */', 'window.ATLAS_RUNTIME=' + runtime + ';')
-        .replace("connect-src 'self';", "connect-src 'self' " + env.ORIGIN.replace('https://', 'wss://') + ';');
+      const block = runtimeBlock({ subjectKey, authMode: identity.mode, name: who.email });
+      let body = page.replace(/<script id="atlas-runtime" type="application\/json">[\s\S]*?<\/script>/, block)
+        .replace("connect-src 'self';", "connect-src 'self' " + connectOrigin(env) + ';');
       const end = body.lastIndexOf('</body>'); // the page embeds an earlier '</body>' inside a script string
       // The test banner stays until Tony sets DATA_MODE=production on an approved deployment (WOW_ZERO_CONFIG §0.7, §11).
-      if (env.DATA_MODE !== 'production') body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
-      return new Response(body, { headers: headers(env, { 'Content-Type': 'text/html; charset=utf-8' }) });
+      if (env.DATA_MODE !== 'production' && end >= 0) body = body.slice(0, end) + '<div style="position:fixed;left:12px;bottom:10px;z-index:99;font:11px/1.4 Arial;letter-spacing:.06em;color:#A9A9BC;background:#15151cdd;border:1px solid #2a2a36;border-radius:14px;padding:4px 10px">TEST DEPLOYMENT · SYNTHETIC DATA ONLY</div>' + body.slice(end);
+      return htmlResponse(env, body, { hashes: PAGE_SCRIPT_HASHES, connect: connectOrigin(env), reportOnlyStrip: true, ...VOICE_PAGE });
     }
     if (url.pathname === '/api/bootstrap' && request.method === 'GET') {
       // One voice for everyone, advertised only as 'atlas': the real voice and provider stay server-side.
@@ -256,10 +341,43 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
         identity, model: 'ATLAS conversational voice', admin,
         voices: ['atlas'], defaultVoice: 'atlas', captureRequired: true, codecAvailable: true, busy: false, capacity: 1, maxSeconds: MAX_SECONDS, speakingSeconds: SPEAKING_LIMIT_S,
         memory: memoryConfigured(env), wiki: false, jev: !!env.TYPESAFE_API_KEY, jevClassify: !!env.TYPESAFE_API_KEY, library: !!env.LIBRARY, libraryRole: role, sheet: true, transcription: true, structuredNotes: true, liveLedger: true, playbackAck: true,
+        ...(readOnly(env) ? { readOnly: true } : {}), ...(aiOff(env) ? { aiOff: true } : {}),
         readiness: env.DATA_MODE === 'production' ? 'production' : 'edge-deployment-test-data-only', privilege: privilegeReadiness(env), email: mail, features: flagsOf(env) });
     }
+    if (url.pathname === '/api/consent' && request.method === 'POST') {
+      const refused = sessionGuard(); if (refused) return refused;
+      const scope = continuityScope(env, who.sub, tenant);
+      if (!scope.ok) return json(env, { error: 'A verified tenant is required.' }, 403);
+      if (!env.INTERVIEW) return json(env, { error: 'The interview store is not configured on this deployment.' }, 404);
+      const fwd = new Request('https://atlas.internal/api/consent', { method: 'POST', body: await request.text(), headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': scope.tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey } });
+      const res = await env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(fwd);
+      return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
+    }
+    if ((url.pathname === '/api/me/erase' && request.method === 'POST') || (url.pathname === '/api/me/export' && request.method === 'GET')) {
+      if (!TENANT_ID.test(tenant)) return json(env, { error: 'A verified tenant is required.' }, 403);
+      const refused = sessionGuard(); if (refused) return refused;
+      if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
+      const action = url.pathname.endsWith('/erase') ? 'erase' : 'export';
+      let eraseBody;
+      if (action === 'erase') {
+        eraseBody = await request.text();
+        let confirmed = false;
+        try { confirmed = JSON.parse(eraseBody).confirmed === true; } catch { confirmed = false; }
+        if (!confirmed) return json(env, { error: 'Erasure needs the confirmation the Worker checks.' }, 400);
+      }
+      const limited = await spend(action === 'erase' ? 'me-erase' : 'me-export', action === 'erase' ? 3 : 5);
+      if (limited) return limited;
+      const fwd = new Request('https://atlas.internal/api/privacy/' + action, { method: request.method, headers: { 'content-type': 'application/json', 'x-atlas-user': libraryUser, 'x-atlas-role': role, 'x-atlas-email': mail, 'x-atlas-tenant': tenant, 'x-atlas-tenant-enforced': tenantFlag, 'x-atlas-subj': subjectKey }, body: action === 'erase' ? eraseBody : undefined });
+      const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(fwd);
+      let payload = {};
+      try { payload = await res.json(); } catch { payload = {}; }
+      if (!res.ok) return json(env, payload, res.status);
+      if (action === 'erase') return json(env, { ...payload, complete: false, erased: false, libraryErased: payload.erased === true, notCovered: NOT_COVERED });
+      return json(env, { ...payload, complete: false, notCovered: NOT_COVERED });
+    }
     if (url.pathname === '/api/voice') {
-      if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426 });
+      if (aiOff(env)) return json(env, { error: INTERVIEW_PAUSED_MESSAGE, code: 'AI_OFF' }, 503);
+      if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket upgrade.', { status: 426, headers: headers(env) });
       if (request.headers.get('Origin') !== env.ORIGIN) return new Response('Invalid voice origin', { status: 403 });
       const forward = new Request(request, { headers: new Headers(request.headers) });
       forward.headers.set('x-atlas-admin', admin ? '1' : '0'); // always overwritten: a browser can never claim admin
@@ -271,11 +389,26 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return env.INTERVIEW.get(env.INTERVIEW.idFromName(scope.objectName)).fetch(forward);
     }
     if (url.pathname.startsWith('/api/sheet/') && request.method === 'POST') {
-      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
-      if (Number(request.headers.get('Content-Length') || 0) > 12 * 1024 * 1024) return json(env, { error: 'The file is larger than 10 MB.' }, 413);
+      if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
+      const refused = sessionGuard(); if (refused) return refused;
+      const sheetPath = url.pathname.slice('/api/sheet/'.length);
+      if (!['ingest', 'draft', 'visuals'].includes(sheetPath)) return json(env, { error: 'Not found.' }, 404);
+      const sheetCap = 12 * 1024 * 1024;
+      if (Number(request.headers.get('Content-Length') || 0) > sheetCap) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
+      const sheetBytes = await boundedBytes(request, sheetCap);
+      if (!sheetBytes) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'The file is larger than 10 MB.' }, 413); }
+      if (sheetPath === 'ingest') {
+        if (!sheetBytes.length) return json(env, { error: 'The file is empty.' }, 400);
+      } else {
+        try { JSON.parse(new TextDecoder().decode(sheetBytes)); } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      }
+      const limited = await spend('sheet', limitOf(env, 'SHEET_HOUR')); if (limited) return limited;
+      const sheetHeaders = new Headers(request.headers); sheetHeaders.delete('content-length');
+      const sheetRequest = new Request(request.url, { method: 'POST', headers: sheetHeaders, body: sheetBytes });
       // PDF metadata (author, producer, title) is never extracted (D2, WOW_ZERO_CONFIG §4): text only.
-      const ai = workersAI(env), res = await sheetRoutes(request, url.pathname.slice('/api/sheet/'.length), { complete: (m, spec) => ai.complete(m, spec),
+      const ai = workersAI(env), res = await sheetRoutes(sheetRequest, sheetPath, { complete: (m, spec) => ai.complete(m, spec),
         toMarkdown: async f => {
+          assertAiOn(env);
           const one = Array.isArray(f) ? f[0] : f;
           const buf = one?.blob && typeof one.blob.arrayBuffer === 'function' ? new Uint8Array(await one.blob.arrayBuffer()) : new Uint8Array(0);
           const plan = markdownPlan(buf, one?.name || '', one?.blob?.type || one?.type || '');
@@ -287,7 +420,7 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     if (url.pathname === '/api/memory' || url.pathname.startsWith('/api/memory/')) {
-      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf))) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (request.method !== 'GET') { const refused = sessionGuard(); if (refused) return refused; }
       if (Number(request.headers.get('Content-Length') || 0) > 131072) return json(env, { error: 'Request too large.' }, 413);
       const forward = new Request(request, { headers: new Headers(request.headers) });
       const scope = continuityScope(env, who.sub, tenant);
@@ -298,8 +431,8 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
     }
     if (url.pathname === '/api/library' || url.pathname.startsWith('/api/library/')) {
       if (!env.LIBRARY) return json(env, { error: 'The reference library is not configured on this deployment.' }, 404);
-      if (request.method !== 'GET' && (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf))) return json(env, { error: 'Invalid request origin or session token.' }, 403);
-      if (Number(request.headers.get('Content-Length') || 0) > 262144) return json(env, { error: 'Request too large.' }, 413);
+      if (request.method !== 'GET') { const refused = sessionGuard(); if (refused) return refused; }
+      if (Number(request.headers.get('Content-Length') || 0) > 262144) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
       // The declared length can be absent or wrong: read at most 256 KiB of the body actually sent, then forward it.
       const bodyless = request.method === 'GET' || request.method === 'HEAD', bytes = bodyless ? null : await boundedBytes(request, 262144);
       if (!bodyless && !bytes) return json(env, { error: 'Request too large.' }, 413);
@@ -312,20 +445,25 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       forward.headers.set('x-atlas-user', libraryUser); forward.headers.set('x-atlas-role', role); forward.headers.set('x-atlas-email', mail); forward.headers.set('x-atlas-tenant', tenant); forward.headers.set('x-atlas-tenant-enforced', tenantFlag);
       forward.headers.set('x-atlas-idp', toB64url(JSON.stringify(signinClaims(request)))); // always overwritten ('e30' = {}): never from the browser
       const res = await env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(forward);
+      if (res.status === 403) slog.log('access_denied', 'FORBIDDEN', 403);
+      if (res.status === 429) slog.log('rate_limited', 'RATE_LIMITED', 429);
       return new Response(res.body, { status: res.status, headers: headers(env, { 'Content-Type': 'application/json' }) });
     }
     // Spoken Ask (F6): transcription of one short question. Off while SPOKEN_ASK_APPROVED (D1) is false; then each
     // request needs the consent prompt's header, and `always` a consent stored in the person's profile. Stores nothing;
     // the log line carries numbers only.
     if (url.pathname === '/api/transcribe' && request.method === 'POST' && flagsOf(env).spokenAsk) {
-      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
-      // A UI gate: it proves the page showed the prompt, not that the person agreed; `always` is checked server-side.
+      if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
+      const refused = sessionGuard(); if (refused) return refused;
+      // Auth and consent before the limiter. A missing consent is 403 even when the limiter cannot be reached.
       const consent = /^spoken-ask-v1;\s*(once|always)$/.exec((request.headers.get('X-Atlas-Consent') || '').trim());
       if (!consent || (consent[1] === 'always' && !await storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFlag }))) return json(env, { error: 'Voice questions need your consent first.' }, 403);
       if ((request.headers.get('Content-Type') || '').replace(/\s+/g, '').toLowerCase() !== 'audio/l16;rate=24000') return json(env, { error: 'Send 16-bit mono PCM at 24 kHz (audio/L16;rate=24000).' }, 415);
-      const pcm = Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX ? null : await boundedBytes(request, AUDIO_MAX);
+      if (Number(request.headers.get('Content-Length') || 0) > AUDIO_MAX) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
+      const pcm = await boundedBytes(request, AUDIO_MAX);
       if (!pcm) return json(env, { error: 'The recording is longer than 30 seconds.' }, 413);
       if (pcm.length < AUDIO_MIN || pcm.length % 2) return json(env, { error: 'The recording is too short or is not 16-bit audio.' }, 400);
+      const limited = await spend('transcribe', limitOf(env, 'TRANSCRIBE_HOUR')); if (limited) return limited;
       const t0 = Date.now(), metric = values => console.log(JSON.stringify({ atlas_metric: 'transcribe', ms: Date.now() - t0, bytes: pcm.length, ...values }));
       let out;
       try { out = await workersAI(env).transcribe(pcm); }
@@ -339,12 +477,15 @@ export async function handle(request, env, page, { waitUntil = p => p, flagsOf =
       return json(env, { text: String(out?.text || '').slice(0, 600), language: out?.language || null });
     }
     if (url.pathname === '/api/jev/classify' && request.method === 'POST') {
-      if (request.headers.get('Origin') !== env.ORIGIN || !csrfOk(request.headers.get('X-Atlas-CSRF'), csrf)) return json(env, { error: 'Invalid request origin or session token.' }, 403);
+      if (aiOff(env)) return json(env, { error: AI_OFF_MESSAGE, code: 'AI_OFF' }, 503);
+      const refused = sessionGuard(); if (refused) return refused;
       if (Number(request.headers.get('Content-Length') || 0) > 65536) return json(env, { error: 'Project too large to score.' }, 413);
-      const raw = await request.text();
-      if (raw.length > 65536) return json(env, { error: 'Project too large to score.' }, 413);
+      const raw = await boundedText(request, 65536);
+      if (raw == null) return json(env, { error: 'Project too large to score.' }, 413);
       let project;
       try { project = JSON.parse(raw).project; } catch { return json(env, { error: 'Invalid JSON.' }, 400); }
+      try { projectState(project); } catch (e) { return json(env, { error: e.message }, e.status || 400); }
+      const limited = await spend('classify', limitOf(env, 'CLASSIFY_HOUR')); if (limited) return limited;
       try { return json(env, await classify(env, project)); }
       catch (e) {
         const stopped = httpBudget(e);
@@ -381,12 +522,20 @@ async function storedSpokenAsk(env, { libraryUser, role, mail, tenant, tenantFla
 // Daily cron (worker.js delegates here so Node tests cover it): references not updated for six months get an
 // update invitation for their owner, plus the feature modules' daily housekeeping. Nothing is ever sent.
 export async function scheduled(controller, env, ctx) {
-  if (!env.LIBRARY || productionDemoConflict(env)) return;
+  if (!env.LIBRARY || productionDemoConflict(env) || rejectUnkeyedAudit(env)) return;
   const enforced = tenantEnforced(env);
   const tenant = String(env.ATLAS_SYSTEM_TENANT || '').trim().toLowerCase();
   if (enforced && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenant)) return;
-  const req = new Request('https://atlas.internal/api/library/scan-stale', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system', 'x-atlas-tenant': enforced ? tenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' } });
-  ctx.waitUntil(env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(req));
+  const headers = { 'Content-Type': 'application/json', 'x-atlas-user': 'atlas-cron', 'x-atlas-role': 'system', 'x-atlas-tenant': enforced ? tenant : '', 'x-atlas-tenant-enforced': enforced ? '1' : '0' };
+  const post = path => env.LIBRARY.get(env.LIBRARY.idFromName('global')).fetch(new Request('https://atlas.internal' + path, { method: 'POST', body: '{}', headers }));
+  if (readOnly(env)) {
+    ctx.waitUntil((async () => {
+      await secEvent(env, 'kill_switch', { reason: 'READ_ONLY', route: '/api/library/verify-chain', method: 'POST', status: 200 });
+      await post('/api/library/verify-chain');
+    })());
+    return;
+  }
+  ctx.waitUntil(post('/api/library/scan-stale'));
 }
 
 // Workers AI adapters. Tolerant of both OpenAI-shaped and native response shapes.
@@ -433,6 +582,7 @@ export function workersAI(env) {
   return {
     // Automatic language detection (Nova-3 "multi"): returns the text and the utterance's language.
     async transcribe(pcm) {
+      assertAiOn(env);
       const audio = capPcm(pcm, LIMITS.stt.maxAudioMs);
       const r = await meter.run(() => ({ kind: 'stt', model: env.STT_MODEL, audioMs: audioMs(audio) }), env.STT_MODEL, { audio: { body: new Blob([wav(audio)]).stream(), contentType: 'audio/wav' }, smart_format: true, punctuate: true, language: env.STT_LANGUAGE || 'multi' });
       return { text: r?.results?.channels?.[0]?.alternatives?.[0]?.transcript || '', language: detectedLanguage(r) };
@@ -440,6 +590,7 @@ export function workersAI(env) {
     // Semantic end-of-turn (Pipecat smart-turn v2): has the consultant finished, or only paused? Last 8 s at 16 kHz.
     // Sent as a base64 WAV string: the binding rejects the streamed {body, contentType} form for this model (AiError).
     async turnComplete(pcm) {
+      assertAiOn(env);
       const tail = capPcm(pcm, LIMITS.turn.maxAudioMs), bytes = wav(to16k(tail), 16000);
       let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       const model = env.TURN_MODEL || '@cf/pipecat-ai/smart-turn-v2', r = await meter.run(() => ({ kind: 'turn', model, audioMs: audioMs(tail) }), model, { audio: btoa(bin) });
@@ -448,6 +599,7 @@ export function workersAI(env) {
     },
     speaks(lang) { return NATIVE_VOICES.includes(lang) || (!!env.ELEVENLABS_API_KEY && !!normalize(lang)); },
     async synthesize(text, speaker = 'atlas', lang = 'en') { // 'atlas' = the configured voice; the browser never sees its real name
+      assertAiOn(env);
       const spoken = capText(text, LIMITS.tts.maxChars);
       if (lang !== 'en' && lang !== 'es' && env.ELEVENLABS_API_KEY) return elevenLabs(env, spoken, lang);
       const es = lang === 'es', model = es ? (env.TTS_MODEL_ES || '@cf/deepgram/aura-2-es') : env.TTS_MODEL;
@@ -456,6 +608,7 @@ export function workersAI(env) {
     },
     // Session affinity keeps one interview on the same model instance, so the cached prompt prefix is reused.
     async *chatStream(messages, { affinity } = {}) {
+      assertAiOn(env);
       const cap = generationTokens(LIMITS.talker);
       const body = { messages, stream: true, max_tokens: cap, temperature: 0.7 };
       const held = await meter.hold(() => ({ kind: 'talker', model: env.TALKER_MODEL, inputTokens: inputTokenCeiling(utf8Length(JSON.stringify(body))), outputTokens: cap }));
@@ -497,19 +650,23 @@ export function workersAI(env) {
       }
     },
     async complete(messages, spec = LIMITS.analystComplete) {
-      const chosen = spec && typeof spec === 'object' && spec.maxTokens ? spec : LIMITS.analystComplete;
+      assertAiOn(env);
+      const chosen = typeof spec === 'number' ? { maxTokens: spec, reasoningTokens: 0 } : (spec && typeof spec === 'object' && spec.maxTokens ? spec : LIMITS.analystComplete);
       return responseText(await runReasoning(env, { messages, temperature: 0.1 }, chosen));
     },
     async embed(text) {
+      assertAiOn(env);
       const model = env.EMBED_MODEL || '@cf/baai/bge-m3', input = capText(text, LIMITS.embed.maxChars);
       const r = await meter.run(() => ({ kind: 'embed', model, inputTokens: inputTokenCeiling(utf8Length(input)) }), model, { text: [input] });
       const v = r?.data?.[0];
       return Array.isArray(v) && v.length ? v : null;
     },
     async report(messages) {
+      assertAiOn(env);
       return responseText(await runReasoning(env, { messages, temperature: 0.2 }, LIMITS.analystReport));
     },
     async analyst(messages) {
+      assertAiOn(env);
       return responseToolCalls(await runReasoning(env, { messages, tools: CHAT_TOOLS, tool_choice: 'auto', temperature: 0 }, LIMITS.analyst));
     },
   };

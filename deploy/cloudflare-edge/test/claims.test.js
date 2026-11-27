@@ -2,7 +2,7 @@
 // the one raw sentence split (snippets.js). No model is ever called: the Library has no `complete` and no `embed`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as claims from '../src/claims.js';
 import * as outreach from '../src/outreach.js';
@@ -104,14 +104,14 @@ test('N+1 resolution: a staffing row (projectId + refs.owner) beats the self-dec
   assert.equal(declared.status, 201);
   assert.deepEqual([declared.body.request.toEmail, declared.body.request.managerSource], ['sam@mantu.com', 'self_declared']);
   outreach.ensure(s.l);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('prj-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('prj-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
   const staffed = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] });
   assert.equal(staffed.status, 201);
   assert.deepEqual([staffed.body.request.toEmail, staffed.body.request.managerSource, staffed.body.request.kind], ['max@mantu.com', 'staffing', 'manager']);
   // Another consultant's staffing row on the same project does not count: the key is (projectId, refs.owner).
   const none = REF(); none.validation = { manager: { name: '', email: '' } }; none.details.projectId = 'PRJ-2';
   const id2 = (await s.l.upsert(ALEX, { localId: 'r2', reference: none })).id, [c2] = await proposed(s, id2, T1);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-2', 'kim@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-2', 'kim@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
   const r = await s.call(ALEX, 'POST', 'confirmations', { refId: id2, claimIds: [c2.id] });
   assert.deepEqual([r.status, r.body.error], [400, 'Name the N+1 on the reference first.']);
 });
@@ -122,10 +122,10 @@ test('Z N+1 from the directory: staffing, then a stored dna/dna_export row, then
   const ask = async () => { const r = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] }); return [r.status, r.body.request?.toEmail || r.body.error, r.body.request?.managerSource || null]; };
   profile.ensure(s.l);
   // The owner typed an N+1 in their own profile: that is self-declared data, never the directory.
-  s.l.sql.exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'alex@mantu.com', 'alex@mantu.com',
+  sqlOf(s.l).exec('INSERT INTO profiles (subject, email, edits, signin, consents, created_at, updated_at, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 'alex@mantu.com', 'alex@mantu.com',
     JSON.stringify({ managerEmail: { value: 'lee@mantu.com', at, basis: '' }, managerName: { value: 'Lee', at, basis: '' } }), '{}', '{}', at, at, at);
   assert.deepEqual(await ask(), [201, 'sam@mantu.com', 'self_declared'], 'profile edits are not a directory source');
-  const row = (source, manager) => s.l.sql.exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  const row = (source, manager) => sqlOf(s.l).exec('INSERT OR REPLACE INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     'alex@mantu.com', source, 'Alex Martin', 'Alex', 'Data engineer', 'Max', manager, 'b1', at);
   row('dna_export', 'max@mantu.com');
   if (!profile.READY) { assert.deepEqual(await ask(), [201, 'sam@mantu.com', 'self_declared'], 'a stub while the profile module is not READY'); return; }
@@ -135,10 +135,10 @@ test('Z N+1 from the directory: staffing, then a stored dna/dna_export row, then
   row('dna', 'kim@mantu.com');
   assert.deepEqual((await ask()).slice(0, 1), [409], 'a directory N+1 must still be independent (kim is on the team)');
   outreach.ensure(s.l);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'bea@mantu.com', 'Bea', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'bea@mantu.com', 'Bea', '', '', 'staffing-csv', 'x')");
   assert.deepEqual(await ask(), [201, 'bea@mantu.com', 'staffing'], 'staffing outranks the directory');
   // A decision on a directory request carries its source (the badge reads "N+1 from DNA").
-  s.l.sql.exec("DELETE FROM staffing"); row('dna', 'max@mantu.com');
+  sqlOf(s.l).exec("DELETE FROM staffing"); row('dna', 'max@mantu.com');
   const [, , source] = await ask(), open = s.l.rows("SELECT id FROM confirmation_requests WHERE manager_source = 'directory' AND to_email = 'max@mantu.com' ORDER BY created_at DESC, rowid DESC")[0];
   assert.equal(source, 'directory');
   const done = await s.call(MAX, 'POST', 'confirmations/' + open.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
@@ -198,7 +198,7 @@ test('inbox: by verified mail only; raw text with full access, record masking wi
   assert.deepEqual(item.claims.map(c => c.text), [T1, T2, T3], 'the declared N+1 has full access: raw sentences');
   // A staffing N+1 without access to the record sees the record masking only.
   outreach.ensure(s.l);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
   const req2 = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [cs[0].id, cs[1].id] })).body.request;
   const [masked] = await inbox(MAX);
   assert.equal(masked.request.id, req2.id);
@@ -261,7 +261,7 @@ test('masked views (inbox, decision, outreach preview): PII is masked before the
   ref.title = 'Sign-off from ops@zebracorp.com'; ref.answers[3] = S;
   const id = await withReference(s, ref), [c] = await proposed(s, id, S);
   outreach.ensure(s.l);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
   const req = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
   assert.equal(req.toEmail, 'max@mantu.com', 'a staffing N+1 without access to the record');
   const want = 'Jane ([email]) signed off; see [link] for the figures.';
@@ -286,7 +286,7 @@ test('a decided claim stays decided while its sentence is current: never asked a
   // Two open requests for the same unverified claim: the declared N+1, then a staffing N+1.
   const first = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
   outreach.ensure(s.l);
-  s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
+  sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at) VALUES ('PRJ-1', 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', 'x')");
   const second = (await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] })).body.request;
   assert.equal(second.toEmail, 'max@mantu.com');
   const corrected = await s.call(SAM, 'POST', 'confirmations/' + first.id, { decisions: [{ claimId: c.id, decision: 'correct', note: 'It was 15, not 12.' }] });
@@ -296,7 +296,7 @@ test('a decided claim stays decided while its sentence is current: never asked a
   const late = await s.call(MAX, 'POST', 'confirmations/' + second.id, { decisions: [{ claimId: c.id, decision: 'confirm' }] });
   assert.deepEqual([late.status, late.body.error], [409, 'These points were already answered in another request.']);
   // A details-only edit that changes the N+1 keeps the sentence: asking again is refused (the probe's path).
-  s.l.sql.exec('DELETE FROM staffing');
+  sqlOf(s.l).exec('DELETE FROM staffing');
   const edit = REF(); edit.validation.manager = { name: 'Pal', email: 'pal@mantu.com' };
   await s.l.upsert(ALEX, { localId: 'r1', reference: edit });
   const again = await s.call(ALEX, 'POST', 'confirmations', { refId: id, claimIds: [c.id] });
@@ -390,7 +390,7 @@ test('acceptance 10: confirmationStatus keys equal the claimKey of the one-pager
     const ref = { ...REF(), title: 'Fixture ' + k, client: { name: f.client }, answers: f.answers };
     const id = (await s.l.upsert(ALEX, { localId: 'f' + k, reference: ref })).id;
     const row = s.l.row(id);
-    s.l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated' } }, 'test', 'published', '');
+    s.l.setState(row, { ...row.state, quality: { status: 'ready', score: 90 }, validation: { status: 'validated', managerDecision: 'approved', presalesDecision: 'approved' } }, 'test', 'published', '');
     assert.equal(s.l.row(id).status, 'published');
     const cands = (await s.call(ALEX, 'GET', 'claims/' + id)).body.candidates;
     const cs = (await s.call(ALEX, 'POST', 'claims', { refId: id, items: cands })).body.claims;
@@ -492,10 +492,10 @@ test('a replaced staffing manager cannot use the confirmation handle opened for 
   directoryRef.answers[4] = 'The directory note stayed on the dashboard export.';
   const directoryId = (await s.l.upsert(alex, { localId: 'r3', reference: directoryRef })).id;
   profile.ensure(s.l);
-  s.l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
+  sqlOf(s.l).exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
   s.l.bindTrust({ email: 'directory', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: sam.email, source: 'directory', tenant: A, tenantEnforced: true });
   outreach.ensure(s.l);
-  for (const project of ['PRJ-1', 'PRJ-2']) s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', ?, ?)", project, s.l.now(), A);
+  for (const project of ['PRJ-1', 'PRJ-2']) sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, 'alex@mantu.com', 'max@mantu.com', 'Max', '', '', 'staffing-csv', ?, ?)", project, s.l.now(), A);
   s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: max.email, source: 'staffing', tenant: A, tenantEnforced: true });
   const propose = async (id, text) => {
     const candidates = (await call(alex, 'GET', 'claims/' + id)).body.candidates;
@@ -560,11 +560,11 @@ test('a blank-manager case variant is an ambiguous staffing assignment and does 
     reference.answers[1] = sentence;
     return (await s.l.upsert(user, { localId, reference })).id;
   };
-  const plant = (project, consultant, tenant, manager) => s.l.sql.exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, ?, ?, '', '', '', 'legacy', ?, ?)", project, consultant, manager, s.l.now(), tenant);
+  const plant = (project, consultant, tenant, manager) => sqlOf(s.l).exec("INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant) VALUES (?, ?, ?, '', '', '', 'legacy', ?, ?)", project, consultant, manager, s.l.now(), tenant);
   const rows = () => s.l.rows('SELECT * FROM staffing ORDER BY project_id, consultant_email, tenant');
   outreach.ensure(s.l);
   profile.ensure(s.l);
-  s.l.sql.exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
+  sqlOf(s.l).exec("INSERT INTO directory (key, source, name, given_name, title, manager_name, manager_email, batch, fetched_at, tenant) VALUES ('alex@mantu.com', 'dna', '', '', '', 'Sam', 'sam@mantu.com', 't', ?, ?)", s.l.now(), A);
   s.l.bindTrust({ email: 'directory', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: sam.email, source: 'directory', tenant: A, tenantEnforced: true });
   s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: max.email, source: 'staffing', tenant: A, tenantEnforced: true });
   s.l.bindTrust({ email: 'staffing-csv', role: 'system', tenant: A, tenantEnforced: true }, { owner: alex.email, email: noor.email, source: 'staffing', tenant: A, tenantEnforced: true });

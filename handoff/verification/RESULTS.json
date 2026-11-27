@@ -80,5 +80,5 @@
     "Multiuser deployment and joint operational vault recovery",
     "Corporate brand and publication approval"
   ],
-  "integrity_note": "MANIFEST.json enumerates package files except itself. Check with scripts/check_handoff.py before editing. Hash matching is not a signature or a security certification."
+  "integrity_note": "MANIFEST.json enumerates package files except itself. Verify an extracted release with make verify-package PACKAGE=path. Hash matching is not a signature or a security certification."
 }

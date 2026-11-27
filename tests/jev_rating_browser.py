@@ -25,6 +25,7 @@ NOTES=['Zebracorp had claims bouncing between three teams, slowing payouts for c
 def serve(fake):
  s=socket.socket();s.bind(('127.0.0.1',0));port=s.getsockname()[1];s.close();base=f'http://127.0.0.1:{port}'
  env={k:v for k,v in os.environ.items() if k not in ('FAKE_TYPESAFE','TYPESAFE_API_KEY')}
+ env['ATLAS_LOCAL_TENANT']='11111111-1111-4111-8111-111111111111'
  if fake:env['FAKE_TYPESAFE']='1'
  SERVERS.append(subprocess.Popen(['node','--no-warnings','dev/local-edge.mjs',str(port)],cwd=EDGE,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.STDOUT))
  for _ in range(100):

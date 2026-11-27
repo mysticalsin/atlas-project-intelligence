@@ -1,6 +1,6 @@
 """v10 actual Canvas/DOM checks. Silent fixtures are explicitly distinguished from voice."""
 from pathlib import Path
-import json,hashlib,os,shutil
+import json,hashlib,os,re,shutil
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 HTML=(ROOT/'ATLAS_Voice_Studio.html').read_text()
@@ -10,9 +10,10 @@ def check(n,v):
  if not v:raise AssertionError(n)
 with sync_playwright() as pw:
  b=pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or shutil.which('chromium'),args=['--no-sandbox']);c=b.new_context(viewport={'width':1440,'height':900},accept_downloads=True)
- def load(html=HTML,reduced=False):
+ def load(html=HTML,reduced=False,init=None):
   p=c.new_page();p.set_default_timeout(5000);p.on('pageerror',lambda e:errors.append(str(e)));p.on('request',lambda r:requests.append(r.url))
   if reduced:p.emulate_media(reduced_motion='reduce')
+  if init:p.add_init_script(init)
   p.set_content(html,wait_until='load');p.wait_for_timeout(250);return p
  def pixels(p):return p.locator('#orbCanvas').evaluate('(c)=>c.toDataURL()')
  try:
@@ -53,7 +54,8 @@ with sync_playwright() as pw:
   box=p.locator('#voiceOpenHome').bounding_box();check('Main call to action fits a 1366 × 768 screen',box['y']+box['height']<=768)  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   p.locator('#studioAppearance').click();p.locator('[data-palette=blue]').click();check('Optional blue appearance works',p.evaluate('AtlasOrbUI.inspect().palette==="blue"'))
   reduced=load(reduced=True);f=reduced.evaluate('AtlasOrbUI.inspect().frames');reduced.wait_for_timeout(300);check('Reduced motion does not animate continuously',reduced.evaluate('AtlasOrbUI.inspect().frames')==f)
-  fail=load(HTML.replace('/* SERVER_RUNTIME */',"HTMLCanvasElement.prototype.getContext=function(){return null};"));check('Missing Canvas retains visible inline SVG',fail.locator('.orb-inline-fallback').is_visible())
+  broken=re.sub(r'<meta content="[^"]*" http-equiv="Content-Security-Policy"/>','',HTML,count=1).replace('<body','<script>HTMLCanvasElement.prototype.getContext=function(){return null};</script><body',1)
+  fail=load(broken);check('Missing Canvas retains visible inline SVG',fail.locator('.orb-inline-fallback').is_visible())
   check('Canvas failure leaves connection controls available',fail.locator('#voiceOpenHome').is_visible())  # offline copy: "Open ATLAS" (WOW_ZERO_CONFIG §3.3)
   check('No JavaScript exceptions across checks',not errors)
  finally:

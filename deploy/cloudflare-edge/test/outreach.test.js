@@ -3,9 +3,10 @@
 // connected client; nothing here reaches the network and no model is called.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Library } from '../src/library.js';
+import { Library, sqlOf } from './hold.js';
 import { libraryRoutes } from '../src/library-routes.js';
 import * as outreach from '../src/outreach.js';
+import { ensure as ensureProfile } from '../src/profile.js';
 import * as claims from '../src/claims.js';
 import { memorySql } from './sqlite.js';
 
@@ -68,13 +69,13 @@ test('trigger: the invitation is unchanged; staffing and exactly 2 pending outre
   assert.deepEqual(rows.map(o => [o.kind, o.subject_id, o.channel, o.to_email, o.status]), [['interview_invite', r.body.id, 'email_draft', 'alex@mantu.com', 'pending_approval'], ['interview_invite', r.body.id, 'teams', 'alex@mantu.com', 'pending_approval']]);
   const again = await trigger(s, { managerEmail: 'sam@mantu.com', endDate: 'not a date' });
   assert.equal(again.body.id, r.body.id, 'lib.invite dedupe unchanged');
-  s.l.sql.exec("UPDATE invitations SET email = 'Alex@mantu.com' WHERE id = ?", r.body.id);
+  sqlOf(s.l).exec("UPDATE invitations SET email = 'Alex@mantu.com' WHERE id = ?", r.body.id);
   const cased = await trigger(s, { projectId: 'prj-9', managerEmail: 'sam@mantu.com' });
   assert.equal(cased.body.id, r.body.id, 'project and email case share one open invitation');
   assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM invitations WHERE reason = 'project_end' AND lower(project_id) = 'prj-9'")[0].n, 1);
   const lettered = 'abcdefab-cdef-4abc-8def-0123456789ab';
   assert.notEqual(lettered.toUpperCase(), lettered);
-  s.l.sql.exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-tenant-case', 'ada@example.test', 'PRJ-TENANT', 'Tenant case', 'project_end', '', '', 'open', ?, 'seed', ?)", s.l.now(), lettered.toUpperCase());
+  sqlOf(s.l).exec("INSERT INTO invitations (id, email, project_id, title, reason, slot, reference_id, status, created_at, source, tenant) VALUES ('inv-tenant-case', 'ada@example.test', 'PRJ-TENANT', 'Tenant case', 'project_end', '', '', 'open', ?, 'seed', ?)", s.l.now(), lettered.toUpperCase());
   const tenantDupe = s.l.invite('pm-system', { email: 'Ada@example.test', projectId: 'prj-tenant', reason: 'project_end', tenant: lettered, referenceId: '' });
   assert.equal(tenantDupe.id, 'inv-tenant-case');
   assert.equal(s.l.rows("SELECT COUNT(*) AS n FROM invitations WHERE lower(project_id) = 'prj-tenant' AND reason = 'project_end'")[0].n, 1);
@@ -142,7 +143,7 @@ test('staffing import: exact header, client columns never read or stored, bad ro
   assert.deepEqual([again.staffed, again.invited, again.outreachQueued], [5, 0, 0]);
   // A dismissed invitation is never re-created by a later import or the daily sweep.
   const other = s.l.rows("SELECT id, status FROM invitations WHERE project_id = 'Zebracorp-2026'")[0];
-  s.l.sql.exec("UPDATE invitations SET status = 'dismissed' WHERE project_id = 'PRJ-1'");
+  sqlOf(s.l).exec("UPDATE invitations SET status = 'dismissed' WHERE project_id = 'PRJ-1'");
   assert.equal(s.l.rows("SELECT status FROM invitations WHERE project_id = 'PRJ-1'")[0].status, 'dismissed');
   assert.equal(s.l.rows("SELECT status FROM invitations WHERE id = ?", other.id)[0].status, 'open');
   assert.equal((await s.call(ADMIN, 'POST', 'staffing/import', { csv })).body.invited, 0);
@@ -189,7 +190,7 @@ test('approve per channel: email draft (drafted, with .ics), Teams not connected
   const t = await s.call(ADMIN, 'POST', 'outreach/' + teams.id, { action: 'approve' });
   assert.deepEqual([t.body.item.status, t.body.item.reason], ['blocked_external', 'Teams is not connected: tenant app, bot credentials and TEAMS_* settings are missing.']);
   // Phone is never queued; a phone row (inserted by hand) is always blocked_external.
-  s.l.sql.exec("INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at) VALUES ('ph1', 'interview_invite', ?, 'phone', 'alex@mantu.com', 'pending_approval', '', '{}', 'x')", inv.id);
+  sqlOf(s.l).exec("INSERT INTO outreach (id, kind, subject_id, channel, to_email, status, reason, payload, created_at) VALUES ('ph1', 'interview_invite', ?, 'phone', 'alex@mantu.com', 'pending_approval', '', '{}', 'x')", inv.id);
   const ph = await s.call(REV, 'POST', 'outreach/ph1', { action: 'approve' });
   assert.equal(ph.body.item.status, 'blocked_external'); assert.match(ph.body.item.reason, /Twilio.*Teams Phone/);
   const d = await s.call(REV, 'POST', 'outreach/' + teams.id, { action: 'dismiss' });
@@ -285,6 +286,36 @@ test('daily: newly due staffing rows are invited once and queued (pending only);
   assert.deepEqual(s.l.rows('SELECT activity_id FROM teams_seen'), [{ activity_id: 'new' }]);
 });
 
+test('a Teams card action rolls back teams_seen when the status update changes nothing', async () => {
+  const fake = fakeTeams(), s = setup({ teams: fake });
+  await install(s);
+  const inv = (await trigger(s)).body;
+  const card = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.channel === 'teams');
+  await s.call(REV, 'POST', 'outreach/' + card.id, { action: 'approve' });
+  const inner = sqlOf(s.l).exec.bind(sqlOf(s.l));
+  let inTx = false, sawChangesInTx = false;
+  const tx = s.l.transactionSync.bind(s.l);
+  s.l.transactionSync = fn => tx(() => { inTx = true; try { return fn(); } finally { inTx = false; } });
+  sqlOf(s.l).exec = (query, ...params) => {
+    const text = String(query);
+    if (text.includes('changes()') && inTx) sawChangesInTx = true;
+    if (text.includes('UPDATE invitations') && text.includes("status IN ('open', 'scheduled')")) {
+      return inner(text.replace("status IN ('open', 'scheduled')", "status = 'no-such-status'"), ...params);
+    }
+    return inner(query, ...params);
+  };
+  const result = await s.call(BOT, 'POST', 'teams-event', {
+    kind: 'action', activityId: 'race-1', tenantId: TID, aadObjectId: OID, conversationId: 'a:conv-alex', verb: 'decline', outreachId: card.id,
+  });
+  const kept = s.l.rows("SELECT COUNT(*) AS n FROM teams_seen WHERE activity_id = 'race-1'")[0].n;
+  const status = s.l.rows('SELECT status FROM invitations WHERE id = ?', inv.id)[0].status;
+  assert.equal(result.status, 200);
+  assert.equal(result.body.card.body[0].text, 'This invitation is closed.');
+  assert.equal(status, 'scheduled');
+  assert.equal(kept, 0, 'teams_seen=' + kept + ' changesInTx=' + sawChangesInTx + ' status=' + status);
+  assert.equal(sawChangesInTx, true);
+});
+
 test('teams-event: install, duplicate activity, stop, uninstall, and card actions bound to the invitee only', async () => {
   const fake = fakeTeams(), s = setup({ teams: fake }); await others(s);
   assert.deepEqual((await install(s)).body, { ok: true });
@@ -340,7 +371,7 @@ test('Z links: every queued kind points at its /go/ path (WOW_ZERO_CONFIG §3.9)
   }
   const inv = (await trigger(s)).body, email = (await s.call(REV, 'GET', 'outreach')).body.items.find(i => i.subjectId === inv.id && i.channel === 'email_draft');
   const row = s.l.rows('SELECT payload FROM outreach WHERE id = ?', email.id)[0], old = { ...JSON.parse(row.payload), path: '/#invitation/' + inv.id };
-  s.l.sql.exec('UPDATE outreach SET payload = ? WHERE id = ?', JSON.stringify(old), email.id);
+  sqlOf(s.l).exec('UPDATE outreach SET payload = ? WHERE id = ?', JSON.stringify(old), email.id);
   const a = await s.call(REV, 'POST', 'outreach/' + email.id, { action: 'approve' });
   assert.ok(a.body.draft.body.includes(`${ORIGIN}/#invitation/${inv.id}`), 'old fragment links keep working');
 });
@@ -356,4 +387,21 @@ test('queue: deduped per subject and channel, previews masked again, bad items r
   assert.throws(() => outreach.queue(s.l, { ...item, toEmail: 'nope' }), e => e.status === 400);
   assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM outreach')[0].n, 2);
   assert.ok(claims.READY && outreach.READY);
+});
+
+test('a due staffing row follows a profile alias stored under a padded uppercase tenant', () => {
+  const s = setup();
+  const tenant = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  outreach.ensure(s.l);
+  ensureProfile(s.l);
+  const at = s.l.now();
+  sqlOf(s.l).exec(`INSERT INTO profiles (subject, tenant, email, edits, signin, consents, created_at, updated_at, seen_at)
+    VALUES ('Ada@Example.test', ?, 'alias@example.test', '{}', '{}', '{}', ?, ?, ?)`, '\t' + tenant.toUpperCase() + ' ', at, at, at);
+  sqlOf(s.l).exec(`INSERT INTO staffing (project_id, consultant_email, manager_email, manager_name, project_title, end_date, source, updated_at, tenant)
+    VALUES ('PRJ-1', 'alias@example.test', '', '', '', ?, 'staffing', ?, ?)`, at.slice(0, 10), at, tenant);
+  sqlOf(s.l).exec(`INSERT INTO refs (id, owner, local_id, title, status, revision, content_hash, members, created_at, updated_at, data, state, tenant)
+    VALUES ('r1', 'ada@example.test', 'r1', 'T', 'in_review', 1, 'h', ',', ?, ?, ?, '{}', ?)`, at, at, JSON.stringify({ details: { projectId: 'PRJ-1' } }), tenant);
+  const result = outreach.daily(s.l, { email: 'atlas-cron', role: 'system', tenant, tenantEnforced: true });
+  assert.equal(result.staffingInvited || 0, 0);
+  assert.equal(s.l.rows('SELECT COUNT(*) AS n FROM invitations')[0].n, 0);
 });

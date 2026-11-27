@@ -3,11 +3,15 @@
 import { retainItems, scrub } from './memory.js';
 import { paid, TYPESAFE_ENDPOINT, boundedJevBody } from './meter.js';
 import { budgetOutcome, httpBudget } from './budget-stop.js';
+import { limitRoute } from './ratelimit.js';
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
 export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch }) {
-  const url = new URL(request.url), bank = request.headers.get('x-atlas-bank') || '', role = request.headers.get('x-atlas-role') || 'user';
+  const url = new URL(request.url);
+  // Same endpoint the Interview object serves (worker.js). The Worker calls it with no bank header.
+  if (url.pathname === '/api/limit') return limitRoute(request, storage);
+  const bank = request.headers.get('x-atlas-bank') || '', role = request.headers.get('x-atlas-role') || 'user';
   if (!bank) return json({ error: 'Sign in first.' }, 401);
   const path = url.pathname.replace(/^\/api\/memory\/?/, ''), off = (await storage.get('memoryOff')) === true;
   let body = {};
