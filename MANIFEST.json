@@ -737,8 +737,8 @@
     },
     {
       "path": "atlas_voice/csp.py",
-      "bytes": 4633,
-      "sha256": "7531fd79e03de80828609ac9e57440ce084a30f708dc353cd5eab4f433b32fea"
+      "bytes": 5016,
+      "sha256": "08b41bb0e04cc9154ec7fe2df7af304c83173db4b7fee1d06b799dea960aacc5"
     },
     {
       "path": "atlas_voice/editor.py",
@@ -1007,8 +1007,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
-      "bytes": 7663,
-      "sha256": "35d1a0483a01dcac4121c3d344cf6e98154689ca73571ac80ea60acb662cecf2"
+      "bytes": 8019,
+      "sha256": "5e17f16e6617c8d4f53539081d04905352a1f0138a7e0074e9fc024d026e446c"
     },
     {
       "path": "deploy/cloudflare-edge/src/csvsafe.js",
@@ -1354,6 +1354,11 @@
       "path": "deploy/cloudflare-edge/test/confirm-page.test.js",
       "bytes": 7277,
       "sha256": "d3d75a1a80fbae1c2574cceee9541d3521eda8c66e08642ec21f706affa6b989"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/csp-connect-source.test.js",
+      "bytes": 1066,
+      "sha256": "a1fd01c982f8c5821e140f770e98fa5f792b7752ade674da0a93e02cd8c89c65"
     },
     {
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
@@ -3404,6 +3409,11 @@
       "path": "tests/test_csp.py",
       "bytes": 8466,
       "sha256": "c7d70bfe003b1b67b7184c80a7cafe1de0eeb3f5f524b89133d809cd83d0f1aa"
+    },
+    {
+      "path": "tests/test_csp_connect.py",
+      "bytes": 872,
+      "sha256": "8a7881c2fd5c47c37d173de8773c7429e56ac484c05c05ae849cca956c603dd4"
     },
     {
       "path": "tests/test_depth.py",
