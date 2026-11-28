@@ -2932,8 +2932,8 @@
     },
     {
       "path": "src/pptx.js",
-      "bytes": 12808,
-      "sha256": "194a47a5c0ad487d7f4b5ec241b6b277e9b17ceaa277bfc15b482597ec890133"
+      "bytes": 13029,
+      "sha256": "dd2bfd9d5f227eda9f5d076ebd47c712aec270e089de05009284845bf8986e41"
     },
     {
       "path": "src/profile-core.js",
@@ -3264,6 +3264,11 @@
       "path": "tests/page_harness.py",
       "bytes": 2134,
       "sha256": "1c286c7286d9709e25f0fed60574391a66dd1346a0fff513b8cba13fcdde6a0c"
+    },
+    {
+      "path": "tests/pptx-draft-warning.test.js",
+      "bytes": 2767,
+      "sha256": "0b5f0b33ba4293a52e9b38e77647e2448f8ea38755e839e2697d6df45d1f597a"
     },
     {
       "path": "tests/pptx.test.js",
