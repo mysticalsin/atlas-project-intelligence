@@ -1052,8 +1052,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/kill-switches.js",
-      "bytes": 4161,
-      "sha256": "2ac2c8dbff62510a2c038398f1ad6f27c52876ae9f95645fa4000bd6d1eb16c0"
+      "bytes": 4468,
+      "sha256": "453f60c321cc0c11056352b1adc33a4338da40381278e2149a8774bf43adc8db"
     },
     {
       "path": "deploy/cloudflare-edge/src/languages.js",
@@ -1329,6 +1329,11 @@
       "path": "deploy/cloudflare-edge/test/bids.test.js",
       "bytes": 59639,
       "sha256": "4bfd50829b45fa5cc12850250be1fc1815a033c2481c5508b214979eabf940df"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/blocked-subject-length.test.js",
+      "bytes": 1002,
+      "sha256": "092f78f189cf6163616d64c3ce5b12dd00e1719733a39aac22c1716292fcb467"
     },
     {
       "path": "deploy/cloudflare-edge/test/breaker.test.js",
