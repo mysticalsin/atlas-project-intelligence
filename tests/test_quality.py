@@ -26,6 +26,16 @@ def test_candidate_provenance_not_verification():
 def test_invented_or_changed_quote_rejected(quote):
  l=InterviewLedger();l.add_transcript('u1','We saved 40%.')
  with pytest.raises(ValueError):candidate(l,quote=quote)
+def test_quote_inside_a_word_is_not_an_excerpt():
+ l=InterviewLedger();l.add_transcript('u1','The account was closed after the handover to the team.')
+ with pytest.raises(ValueError):candidate(l,quote='count')
+ assert not l.details
+ assert candidate(l,quote='The account was closed')['candidate_details'][0]['quote']=='The account was closed'
+ l.add_transcript('u2','The open count was twelve after the handover.')
+ candidate(l,quote='count',ident='u2')
+ assert 'count' in {line for part in l.notes() for line in part.splitlines()}
+ l3=InterviewLedger();l3.add_transcript('u1','The queue handled 100000 tickets in the quarter.')
+ with pytest.raises(ValueError):candidate(l3,quote='10000')
 def test_missing_transcript_rejected():
  with pytest.raises(ValueError):candidate(InterviewLedger())
 def test_model_own_speech_cannot_be_recorded():

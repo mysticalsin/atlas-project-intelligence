@@ -26,6 +26,23 @@ UNCERTAIN = re.compile(r'\b(?:guess|roughly|about|approximately|estimate|not sur
 UNKNOWN = re.compile(r"\b(?:don.t know|not measured|no baseline|no measurement|unknown|not yet known|cannot share|can.t share|under NDA|not authorized to disclose)\b", re.I)
 TO_TOPIC = {'problem':0,'stakes':0,'contribution':1,'intervention':2,'decision':2,'adoption':2,'outcome':3,'measurement':3,'evidence':4,'limitations':4,'customer_fit':5,'poor_fit':5}
 
+def verbatim_excerpt(quote, source):
+    """True when quote occurs as its own span, not inside a longer word or number."""
+    if not quote or not source:
+        return False
+    start = 0
+    n = len(quote)
+    while True:
+        i = source.find(quote, start)
+        if i < 0:
+            return False
+        before = i == 0 or not source[i - 1].isalnum()
+        end = i + n
+        after = end == len(source) or not source[end].isalnum()
+        if before and after:
+            return True
+        start = i + 1
+
 INTERVIEW_POLICY = '''You are ATLAS, Mantu's project-experience interviewer. Your job is to discover a defensible account of what happened, not to flatter, maximize claims, or fill a form.
 Speak naturally, warmly and concisely. Ask ONE main question, then wait. Usually 1-2 sentences. Acknowledge the specific detail you heard, not generic praise. Never say you are sentient, infer emotions, or pretend to remember facts not supplied by authorized memory. Do not narrate tools.
 Lead the interview aloud. Start by asking about the customer problem, unless confirmed prior notes make that redundant. Use the person's terminology. A brief pause is not permission to interrupt. When interrupted, stop, take the correction, and continue without restarting a speech.
@@ -85,7 +102,7 @@ class InterviewLedger:
                 raise ValueError('Invalid field, transcript reference or quote length')
             # Whitespace normalization only: preserve numbers, negation and spelling.
             quote=' '.join(q.split());source=' '.join(self.transcripts[ident].split())
-            if quote not in source: raise ValueError('Quote is not in the consultant transcript')
+            if not verbatim_excerpt(quote, source): raise ValueError('Quote is not in the consultant transcript')
             supersedes=x.get('supersedes','')
             if supersedes and not any(d['id']==supersedes and d['field']==f and d['active'] for d in self.details):
                 raise ValueError('Correction must reference an active same-field candidate')
@@ -198,7 +215,7 @@ class InterviewLedger:
         for x in self.details:
             if x['active']:
                 i=TO_TOPIC[x['field']]
-                if x['quote'] not in sections[i]:sections[i]=(sections[i]+'\n'+x['quote']).strip()[:6000]
+                if not verbatim_excerpt(x['quote'], sections[i]):sections[i]=(sections[i]+'\n'+x['quote']).strip()[:6000]
         return sections
 
 

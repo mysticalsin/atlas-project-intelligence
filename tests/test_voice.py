@@ -78,6 +78,11 @@ def test_exact_excerpts_only():
     assert result[0]=='I built ingestion.' and result[1]==''
     with pytest.raises(ValueError):validate_notes({'sections':[{'excerpts':['We saved millions.']}]*6},'I built ingestion.')
 
+def test_excerpt_inside_a_word_is_rejected():
+    with pytest.raises(ValueError):validate_notes({'sections':[{'excerpts':['count']}]+[{'excerpts':[]}]*5},'The account was closed after the handover.')
+    result=validate_notes({'sections':[{'excerpts':['The account was closed']}]+[{'excerpts':[]}]*5},'The account was closed after the handover.')
+    assert result[0]=='The account was closed'
+
 def test_identity_role_tenant_audience_expiry():
     cfg=replace(Config(),tenant='11111111-1111-1111-1111-111111111111',client_id='22222222-2222-2222-2222-222222222222')
     i=Identity(cfg)
