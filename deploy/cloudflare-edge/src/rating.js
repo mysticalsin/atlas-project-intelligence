@@ -194,11 +194,13 @@ export function ownMask(data, terms, names = []) {
   };
 }
 
-// The containment guard (§3.3): the story part of the body, decoded exactly as TypeSafe will read it, must contain none
-// of the record's own values. Throws RatingError('guard'); nothing is sent. NOTICE and the questions are never scanned.
+// The containment guard (§3.3): story values, decoded exactly as TypeSafe will read them, must contain none
+// of the record's own values. Field names are the rating schema, so a client called Lines is not a hit on
+// service_lines and a client called Title is not a hit on title. Throws RatingError('guard'); nothing is sent.
+// NOTICE and the questions are never scanned.
 export function guard(referenceText, terms) {
   const texts = [];
-  const collect = v => { if (typeof v === 'string') texts.push(nfc(v)); else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { texts.push(nfc(k)); collect(x); } };
+  const collect = v => { if (typeof v === 'string') texts.push(nfc(v)); else if (v && typeof v === 'object') for (const x of Object.values(v)) collect(x); };
   try { collect(JSON.parse(referenceText)); } catch { throw new RatingError('guard'); }
   for (const raw of terms || []) {
     const term = norm(raw);

@@ -1147,8 +1147,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/rating.js",
-      "bytes": 41181,
-      "sha256": "5a85d3c43c5b58162255f9fc469f3ac2ce0e106e57b550df3c257a458fb072f6"
+      "bytes": 41284,
+      "sha256": "220f145dbabdce211a8c823b02e71e3243165dd521297225be99abbe48f8f5a2"
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
@@ -1574,6 +1574,11 @@
       "path": "deploy/cloudflare-edge/test/ratelimit.test.js",
       "bytes": 11264,
       "sha256": "f6e2e06a78fded1062a68d195dd73fcea5b428f638f0025226954a462d36e872"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/rating-field-guard.test.js",
+      "bytes": 2262,
+      "sha256": "3eaf420dc9060b786b786c31f1627c01c04dc74808aa5b81a7e260e4b3bffd82"
     },
     {
       "path": "deploy/cloudflare-edge/test/rating.test.js",
