@@ -1232,8 +1232,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/teams.js",
-      "bytes": 13539,
-      "sha256": "6180aa65f27b91229e00c2bda6c97923adeedb4a25a048a1acb4fd0875d0c5ac"
+      "bytes": 13840,
+      "sha256": "73a87dc8597455bcb3bbc89736fb901f025326578a71cfe394dcf334855a9b41"
     },
     {
       "path": "deploy/cloudflare-edge/src/telemetry.js",
@@ -1767,8 +1767,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/teams.test.js",
-      "bytes": 27444,
-      "sha256": "cae7c6de0a57cee362da5d360d62c75280b922269f87e7116ad6b8dc9e9e8ad9"
+      "bytes": 28611,
+      "sha256": "5c0be1f4a75961a245157f690fb2b061bfbfb0164da7a4b0d9c3baf646ec6215"
     },
     {
       "path": "deploy/cloudflare-edge/test/vendor/acorn-LICENSE",

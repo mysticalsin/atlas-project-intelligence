@@ -19,10 +19,16 @@ export function teamsStatus(env = {}) {
 }
 
 const hostsOf = env => [...SERVICE_HOSTS, ...String(env?.TEAMS_SERVICE_HOSTS || '').toLowerCase().split(',').map(h => h.trim()).filter(h => /^[a-z0-9.-]+$/.test(h))];
-// The serviceUrl as a base ending in '/', when it is https on an allow-listed host; else ''.
+// A service base is https on an allow-listed host, with no userinfo, query or fragment, and a path ending in '/'.
+// A trailing '?' or '#' is not part of the path. Joining v3/conversations onto href would leave the conversation in the query or the fragment.
 function serviceBase(value, env) {
-  try { const u = new URL(String(value)); return u.protocol === 'https:' && !u.username && !u.password && hostsOf(env).includes(u.hostname.toLowerCase()) ? u.href.replace(/\/?$/, '/') : ''; }
-  catch { return ''; }
+  try {
+    const u = new URL(String(value));
+    if (u.protocol !== 'https:' || u.username || u.password || u.href !== u.origin + u.pathname) return '';
+    if (!hostsOf(env).includes(u.hostname.toLowerCase())) return '';
+    const path = u.pathname.endsWith('/') ? u.pathname : u.pathname + '/';
+    return u.origin + path;
+  } catch { return ''; }
 }
 const b64url = s => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((String(s).length + 3) % 4)), c => c.charCodeAt(0));
 
