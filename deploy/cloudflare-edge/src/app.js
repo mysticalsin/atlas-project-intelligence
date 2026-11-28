@@ -220,7 +220,10 @@ async function route(request, env, page, { waitUntil, flagsOf, slog }) {
       const secret = env.TRIGGER_SECRET || '', given = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       if (!secret || !env.LIBRARY || given.length !== secret.length || !timingSafe(given, secret)) { slog.log('bearer_fail', 'BEARER_INVALID', 401); return json(env, { error: 'Unauthorized.' }, 401); }
       if (Number(request.headers.get('Content-Length') || 0) > 16384) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
-      const raw = await request.text();
+      // A missing or short Content-Length is not the body. Read at most 16 KiB, then stop.
+      const bytes = await boundedBytes(request, 16384);
+      if (!bytes) { slog.log('body_too_large', 'BODY_TOO_LARGE', 413); return json(env, { error: 'Request too large.' }, 413); }
+      const raw = new TextDecoder().decode(bytes);
       const scope = systemScope(env);
       if (!scope.ok) return json(env, scope.body, scope.status);
       if (callerNamedTenant(request, raw).some(t => t !== scope.tenant)) return json(env, { error: 'A system ingress uses only the configured tenant. The tenant on this request was not accepted.' }, 403);
