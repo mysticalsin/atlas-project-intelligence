@@ -907,8 +907,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/fakes/proof.mjs",
-      "bytes": 3586,
-      "sha256": "5f688fff5da0492b3f0252e5a02743099d0a663bb471a7015f95368d9bd3e7d8"
+      "bytes": 3587,
+      "sha256": "8dafa42fad9f511a6a39cd3f772c04df4bbff2d0bf55ff25b287809b1a941144"
     },
     {
       "path": "deploy/cloudflare-edge/dev/fakes/trust.mjs",
@@ -1554,6 +1554,11 @@
       "path": "deploy/cloudflare-edge/test/profile.test.js",
       "bytes": 56802,
       "sha256": "df8b9c65cc7d20a99ae4f7d46ba497c3f75f92240419ba21b92bddcd85354d7a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/proof-buyer-case.test.js",
+      "bytes": 2049,
+      "sha256": "0782e658c88f8acbfff97737d29b412d0cf21dcd19058179c6ecb5ac98bd00e2"
     },
     {
       "path": "deploy/cloudflare-edge/test/publication-golden.test.js",
