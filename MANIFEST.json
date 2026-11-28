@@ -1047,8 +1047,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/journey.js",
-      "bytes": 11542,
-      "sha256": "b8aadbaa3e8014238bfd29b57428303ebef01c2ad00b2c97045eefd0c9508189"
+      "bytes": 11836,
+      "sha256": "124564b609816eb8bcc767e2bd0843e92149c498a6cce26cc71d2b7813177ae8"
     },
     {
       "path": "deploy/cloudflare-edge/src/kill-switches.js",
@@ -1469,6 +1469,11 @@
       "path": "deploy/cloudflare-edge/test/journey-case-erase.test.js",
       "bytes": 2471,
       "sha256": "905a78cbff28453060647167387733d56c114e5f2267550cc2be3299dd98edbd"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/journey-field-shape.test.js",
+      "bytes": 1673,
+      "sha256": "19263e4d0174f14e445159ae955e7c54f1dacc69fd28dc9f5aedd93e27584035"
     },
     {
       "path": "deploy/cloudflare-edge/test/journey-subject.test.js",
