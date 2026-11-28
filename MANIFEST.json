@@ -1232,8 +1232,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/teams.js",
-      "bytes": 13539,
-      "sha256": "6180aa65f27b91229e00c2bda6c97923adeedb4a25a048a1acb4fd0875d0c5ac"
+      "bytes": 13873,
+      "sha256": "8aca821dc73cef2dbf23e325818c0ed5b1e346ca5a52c4df20e76f979d8dca7c"
     },
     {
       "path": "deploy/cloudflare-edge/src/telemetry.js",
@@ -1714,6 +1714,11 @@
       "path": "deploy/cloudflare-edge/test/security-log.test.js",
       "bytes": 6886,
       "sha256": "1cf83d6efc701f3b6f37e96b2e23125c6febffc9a261bd4a04e3e9d4a609089f"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/service-url-base.test.js",
+      "bytes": 3907,
+      "sha256": "099d01baa87f54c4c244277609b5e2e06aa085ec9eaca2e982b42b1567da734b"
     },
     {
       "path": "deploy/cloudflare-edge/test/session.test.js",
