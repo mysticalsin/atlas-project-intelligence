@@ -35,9 +35,19 @@ def endpoint(value: str, *, websocket: bool = False) -> str:
     """TLS outside loopback, no URL credentials/query/fragment; fixed operator configuration."""
     if not value:
         return ''
+    # urlsplit hides a newline, a trailing space, an empty userinfo and a bare '?' or '#'.
+    # The gateway later uses this string as the request URL, so the raw text has to be plain.
+    if any(ord(ch) < 33 or ord(ch) == 127 for ch in value) or any(ch in value for ch in '?#@'):
+        raise ValueError('Use a plain configured endpoint URL without credentials, query or fragment.')
     u = urlsplit(value)
     allowed = ('ws', 'wss') if websocket else ('http', 'https')
-    if u.scheme not in allowed or not u.hostname or u.username or u.password or u.query or u.fragment:
+    if u.scheme not in allowed or not u.hostname or u.username is not None or u.password is not None or u.query or u.fragment:
+        raise ValueError('Use a plain configured endpoint URL without credentials, query or fragment.')
+    try:
+        port = u.port
+    except ValueError:
+        raise ValueError('Use a plain configured endpoint URL without credentials, query or fragment.') from None
+    if port == 0:
         raise ValueError('Use a plain configured endpoint URL without credentials, query or fragment.')
     if u.scheme in ('http', 'ws') and u.hostname not in LOOPBACK:
         raise ValueError('Remote providers require verified TLS; use an SSH tunnel for a private local port.')
