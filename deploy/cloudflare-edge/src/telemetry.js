@@ -152,7 +152,9 @@ function workflowCounts(lib, tenant, enforced) {
     if (status === 'withdrawn') out.withdrawn += 1;
     else if (status === 'published') out.published += 1;
     else if (status === 'admin_test') out.admin_test += 1;
-    else if (state.validation?.managerDecision === 'approved') out.awaiting_presales += 1;
+    // Same queue the journey labels "awaiting pre-sales": validation is open, the manager has approved, and pre-sales has not.
+    // needs_work and changes_requested stay in the other open bucket.
+    else if (status === 'awaiting_validation' && state.validation?.managerDecision === 'approved' && state.validation?.presalesDecision !== 'approved') out.awaiting_presales += 1;
     else out.awaiting_manager += 1;
     if (!state.quality) out.draft += 1;
   }
