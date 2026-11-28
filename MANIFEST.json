@@ -1137,8 +1137,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/publication.js",
-      "bytes": 10871,
-      "sha256": "6b9338204f5021d9e0544b45df364375dc03fc5690417bde2ae6d2142bec6f33"
+      "bytes": 11149,
+      "sha256": "7f4e61312c287b7d6643ccb63380a030b5a207e8aa64b3742586e97e1b426536"
     },
     {
       "path": "deploy/cloudflare-edge/src/ratelimit.js",
@@ -1554,6 +1554,11 @@
       "path": "deploy/cloudflare-edge/test/profile.test.js",
       "bytes": 56802,
       "sha256": "df8b9c65cc7d20a99ae4f7d46ba497c3f75f92240419ba21b92bddcd85354d7a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/publication-admin-lane.test.js",
+      "bytes": 3701,
+      "sha256": "0c49d076d8d23bfe0ea451dce6bfe2cfca9c2a668e72bf8d5f124b1dea2cbf4b"
     },
     {
       "path": "deploy/cloudflare-edge/test/publication-golden.test.js",
