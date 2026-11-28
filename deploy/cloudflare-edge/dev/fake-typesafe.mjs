@@ -11,7 +11,9 @@ const round = x => Math.round(x * 1e4) / 1e4;
 
 function at(state, instructions) {
   const path = /`([^`]+)`/.exec(String(instructions || ''))?.[1];
-  const v = path ? path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), state) : state;
+  // memories[0] is the same lookup as memories.0. Relevance questions use the bracket form.
+  const keys = path ? path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean) : null;
+  const v = keys ? keys.reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), state) : state;
   return typeof v === 'string' ? v : v === undefined ? '' : JSON.stringify(v);
 }
 // The demo shape of https://docs.typesafe.ai/confidence.md, extended to n options: (n × largest − 1) / (n − 1).
