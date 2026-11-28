@@ -922,8 +922,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/page-guard.mjs",
-      "bytes": 798,
-      "sha256": "d855da7424a20cf1a63abce389a4230a2ada30d31d1b239cb6c051b4304d7682"
+      "bytes": 804,
+      "sha256": "9513a76cd8c7e816cf0a8e47119d60ac0c2b30552462f618f38e3eb1b9d79553"
     },
     {
       "path": "deploy/cloudflare-edge/entra/README.md",
@@ -1519,6 +1519,11 @@
       "path": "deploy/cloudflare-edge/test/package.json",
       "bytes": 33,
       "sha256": "89c47db7851f89caec72da4f215ebc21cf1e294aeef3b45d2583562d846ab035"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/page-guard-bytes.test.js",
+      "bytes": 969,
+      "sha256": "294398f4d733168f5bfb77cf2e7a1c2e6704f839a35cff0d300eaeea74303e74"
     },
     {
       "path": "deploy/cloudflare-edge/test/page-guard.test.js",
