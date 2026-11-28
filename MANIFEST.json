@@ -1032,8 +1032,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/gaps.js",
-      "bytes": 21354,
-      "sha256": "5b74cde68a73a6666a59e4a8ce8a41b4d45a11a674eb236abcdf1a01afd2005f"
+      "bytes": 21610,
+      "sha256": "92ef03c17384a45b3e5d450ae6932c67ec735dd2e033b714f2cb37180e9cd6d1"
     },
     {
       "path": "deploy/cloudflare-edge/src/invitation.js",
@@ -1394,6 +1394,11 @@
       "path": "deploy/cloudflare-edge/test/gap.vectors.json",
       "bytes": 43458,
       "sha256": "0a6d6395dd7dd4124bf897f0f9de7b12d224b552ce5b92ceba2029d2df6d9b3b"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/gaps.short-ask.test.js",
+      "bytes": 3502,
+      "sha256": "698fd68648c7c4c3eae25325114c8c56a66e41cd488ed423ccbd6c1e89096de9"
     },
     {
       "path": "deploy/cloudflare-edge/test/gaps.test.js",

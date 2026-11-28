@@ -47,10 +47,16 @@ export function ensure(lib) {
 const parsed = (text, fallback) => { try { return JSON.parse(text) ?? fallback; } catch { return fallback; } };
 const chars = (s, n) => Array.from(String(s)).slice(0, n).join('');
 // An ask is stored whole: 'Proof the bid needs: ' + the requirement in placeholder form. It is cut to 160 characters only
-// after it is rendered for the caller (a label cut in half is dropped rather than shown as a fragment), so the author's
-// cut falls in their own words whether or not a name is masked for others (ground rule 5).
+// after it is rendered for the caller. A label cut in half is dropped rather than shown as a fragment, and only then:
+// a short ask that already ends on an unclosed bracket is the author's text, not a fragment. The author's cut falls
+// in their own words whether or not a name is masked for others (ground rule 5).
 const askText = text => 'Proof the bid needs: ' + text;
-const cutAsk = text => chars(text, ASK_CHARS).replace(/\s*\[[A-Za-z]*(?:\s+\d*)?$/, '').trim();
+const cutAsk = text => {
+  const full = String(text ?? '');
+  const points = Array.from(full);
+  if (points.length <= ASK_CHARS) return full.trim();
+  return points.slice(0, ASK_CHARS).join('').replace(/\s*\[[A-Za-z]*(?:\s+\d*)?$/, '').trim();
+};
 const originOf = ctx => { for (const v of [ctx.env?.ORIGIN, ctx.url?.href]) { try { const o = new URL(String(v)).origin; if (/^https?:\/\//.test(o)) return o; } catch { /* next */ } } return ''; };
 const rowOf = (lib, id) => lib.rows('SELECT * FROM gap_requests WHERE id = ?', id)[0];
 const isAssignee = (g, user) => !!user.mail && user.mail === g.email;
