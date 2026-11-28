@@ -47,12 +47,13 @@ EXTRA = {
     'MKD': 'macedonia|north macedonia|macedoine|macedoine du nord|nordmazedonien|mazedonien|macedonia del norte|'
            'macedonia del nord|noord macedonie|macedonia do norte',
     'KOR': 'south korea|republic of korea|korea republic of|korea republic|korea south|rok|coree du sud|sudkorea|'
-           'corea del sur|corea del sud|zuid korea|coreia do sul',
+           'corea del sur|corea del sud|zuid korea|coreia do sul|korea the republic of',
     'PRK': 'north korea|dprk|democratic people s republic of korea|korea dpr|korea north|'
-           'korea democratic people s republic of|coree du nord|nordkorea|corea del norte|corea del nord|noord korea|coreia do norte',
+           'korea democratic people s republic of|korea the democratic people s republic of|coree du nord|nordkorea|'
+           'corea del norte|corea del nord|noord korea|coreia do norte',
     'COD': 'dr congo|d r congo|drc|rdc|rd congo|r d congo|democratic republic of congo|democratic republic of the congo|'
            'congo kinshasa|congo democratic republic|congo democratic republic of|congo democratic republic of the|'
-           'republique democratique du congo|demokratische republik kongo',
+           'congo the democratic republic of the|republique democratique du congo|demokratische republik kongo',
     'COG': 'republic of congo|republic of the congo|congo brazzaville|congo republic|congo republic of|congo rep|'
            'republique du congo|republik kongo',
     'NOR': 'norge', 'DNK': 'danmark', 'FIN': 'suomi', 'SWE': 'sverige', 'HRV': 'hrvatska', 'SVK': 'slovensko',
