@@ -622,23 +622,23 @@
     },
     {
       "path": "ATLAS_Intelligence.html",
-      "bytes": 924945,
-      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
+      "bytes": 924969,
+      "sha256": "03661fc2f3ca1bfbdb0aa13cb9e476722a160cb915fd2d33b4406a9599415935"
     },
     {
       "path": "ATLAS_Project_Intelligence.html",
-      "bytes": 924945,
-      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
+      "bytes": 924969,
+      "sha256": "03661fc2f3ca1bfbdb0aa13cb9e476722a160cb915fd2d33b4406a9599415935"
     },
     {
       "path": "ATLAS_Voice.html",
-      "bytes": 924945,
-      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
+      "bytes": 924969,
+      "sha256": "03661fc2f3ca1bfbdb0aa13cb9e476722a160cb915fd2d33b4406a9599415935"
     },
     {
       "path": "ATLAS_Voice_Studio.html",
-      "bytes": 924945,
-      "sha256": "383cfa6ef95cd9e9c7507b737c24515275d4b03553f1def4ee05adc527433ad1"
+      "bytes": 924969,
+      "sha256": "03661fc2f3ca1bfbdb0aa13cb9e476722a160cb915fd2d33b4406a9599415935"
     },
     {
       "path": "CLAUDE.md",
@@ -938,7 +938,7 @@
     {
       "path": "deploy/cloudflare-edge/generated/PAGE_SHA256.txt",
       "bytes": 146,
-      "sha256": "a09d4e269ca43b739954dacde7d0bf72d159a44637f1a4b531aeef4f8ff59664"
+      "sha256": "f4efc7a636f443ffb39ee19ff8f7a903245687c5ca69c68c0ff10293d31a252e"
     },
     {
       "path": "deploy/cloudflare-edge/set-keys.sh",
@@ -1003,7 +1003,7 @@
     {
       "path": "deploy/cloudflare-edge/src/csp.generated.js",
       "bytes": 1675,
-      "sha256": "dc1849925d3221d9cb4285f0d6a375964f033b33f0360c557b36ec5ffeb78d4e"
+      "sha256": "d7f90e421f0b405be52d9ccc197ce1a7402b93b61b8009b618dc27952a45316d"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp.js",
@@ -2937,8 +2937,8 @@
     },
     {
       "path": "src/profile-core.js",
-      "bytes": 8007,
-      "sha256": "b49fab15b80867ad08f27ec76cb5d62ce36fce1f22b86202b1a025562e05886b"
+      "bytes": 8031,
+      "sha256": "fbd57624536827585285c0fef24df0cd6c0cf0aed9e1646f8aef34d7268df21b"
     },
     {
       "path": "src/profile-ui.js",
@@ -3129,6 +3129,11 @@
       "path": "tests/depth_browser.py",
       "bytes": 6360,
       "sha256": "1a0f22dd66652ede17d2e0c83f391aa13cd895fd2d31be2dbd7f91f5f57bf4ae"
+    },
+    {
+      "path": "tests/directory-csv-cap.test.js",
+      "bytes": 1119,
+      "sha256": "c0986a6a679e3a9a0e81836d401f89b31766c46f0e014f428d200f2a0156636a"
     },
     {
       "path": "tests/directory-ui.test.js",
