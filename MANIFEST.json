@@ -1252,8 +1252,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/winloop.js",
-      "bytes": 11202,
-      "sha256": "9a8ba446bed0847f4d575d2a34c3f5a3d97fac5317bc7b20aae8183148324518"
+      "bytes": 11321,
+      "sha256": "d28a2a5a9ad648a357489edb2cde2609b03c2da894553ebf3394812ed03b028d"
     },
     {
       "path": "deploy/cloudflare-edge/src/worker.js",
@@ -1784,6 +1784,11 @@
       "path": "deploy/cloudflare-edge/test/vendor/acorn.mjs",
       "bytes": 234658,
       "sha256": "76254fc76529713b4dfd2532972d17a991ffd9aafeebb1f977445b5506b9fb0b"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/winloop-cache.test.js",
+      "bytes": 2097,
+      "sha256": "3c471f01380dc25dab3536e847a34c0077f6b42246c1b71a4e74da6e5536170a"
     },
     {
       "path": "deploy/cloudflare-edge/test/winloop.test.js",
