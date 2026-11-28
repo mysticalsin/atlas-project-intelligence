@@ -826,6 +826,11 @@
       "sha256": "1bd3030363976f9bb7396c4fbad280862e73d4f698e94e3615152379cadcc580"
     },
     {
+      "path": "atlas_voice/story_attachment.py",
+      "bytes": 15341,
+      "sha256": "a9637dddcf1724e346627d68b03213f42995425554ada34fb6e61ff879a0e2e1"
+    },
+    {
       "path": "atlas_voice/textfold.py",
       "bytes": 2977,
       "sha256": "62cde26311a83e376a746302a02b8ca0f2c0625ea8061edb886a7b5b1c5593b8"
@@ -3509,6 +3514,11 @@
       "path": "tests/test_speech.py",
       "bytes": 10245,
       "sha256": "2b6391655277bdc23a92b5cc35fedf1eef3c8eec6d69ed807fe5544468c3d643"
+    },
+    {
+      "path": "tests/test_story_attachment.py",
+      "bytes": 18647,
+      "sha256": "95e551209381225052b019aa02bdac30631936a76628804e06c71cfe7286ec10"
     },
     {
       "path": "tests/test_teams_package.py",
