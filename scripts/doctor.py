@@ -19,11 +19,50 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 
+def literal_assignment(text: str) -> str:
+    """The assignment text after '=', with a trailing shell comment removed.
+
+    Bash starts a comment at '#' only when that character begins a word.
+    A '#' attached to the value stays in the value. A later word that is not
+    a comment is left in place so the caller still rejects it.
+    """
+    quote = ''
+    i = 0
+    n = len(text)
+    while i < n:
+        c = text[i]
+        if quote:
+            if c == '\\' and quote == '"' and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                quote = ''
+            i += 1
+            continue
+        if c in '"\'':
+            quote = c
+            i += 1
+            continue
+        if c == '\\' and i + 1 < n:
+            i += 2
+            continue
+        if c.isspace():
+            j = i
+            while j < n and text[j].isspace():
+                j += 1
+            if j >= n or text[j] == '#':
+                return text[:i]
+            return text
+        i += 1
+    return text
+
+
 def read_literal_env(path: Path) -> dict[str, str]:
     """Read a deliberately small .env grammar without executing shell code.
 
     The launcher sources a trusted shell file. This diagnostic does NOT; ambiguous
     interpolation/commands are rejected, never evaluated or echoed into errors.
+    A '#' inside an assignment is kept. A '#' that begins a later word is a comment.
     """
     if not path.is_file() or path.stat().st_size > 65536:
         raise ValueError('Environment file is missing or exceeds 64 KiB.')
@@ -37,9 +76,9 @@ def read_literal_env(path: Path) -> dict[str, str]:
         match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$', line)
         if not match or '$(' in line or '${' in line or '`' in line:
             raise ValueError(f'Line {no}: use literal KEY=value assignments; shell evaluation is not supported.')
-        key, value = match.groups()
+        key = match.group(1)
         try:
-            parts = shlex.split(value, comments=True, posix=True)
+            parts = shlex.split(literal_assignment(line[line.find('=') + 1:]), comments=False, posix=True)
         except ValueError:
             raise ValueError(f'Line {no}: invalid quoting; no value has been displayed.') from None
         if len(parts) > 1:

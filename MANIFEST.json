@@ -2757,8 +2757,8 @@
     },
     {
       "path": "scripts/doctor.py",
-      "bytes": 10456,
-      "sha256": "b84c3a092fca726775e3e30843d4895d18348816ecdd1a8b0a34a8ca97f3dbe9"
+      "bytes": 11616,
+      "sha256": "76dab8a2e08fe87914effc2b3a1aa1d22effac636f72e9360afade738da7c630"
     },
     {
       "path": "scripts/e2e_demo.py",
@@ -3439,6 +3439,11 @@
       "path": "tests/test_depth.py",
       "bytes": 10551,
       "sha256": "bb246b8d41d83b7de0f1caefe2d80dd6256042190cfafbefd7914bd56f386230"
+    },
+    {
+      "path": "tests/test_doctor_hash.py",
+      "bytes": 1283,
+      "sha256": "fea3912dedef59e6d4ff70162dea545925dca01285b45cf0c89121e826df9499"
     },
     {
       "path": "tests/test_edge.py",
