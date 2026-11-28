@@ -1197,8 +1197,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/snippets.js",
-      "bytes": 2664,
-      "sha256": "528badb5b1c8e0d84b20016a07f53e9ff01b1ba4f40c747d806585d85672e1f7"
+      "bytes": 3546,
+      "sha256": "2fca8ca754c1c61d70bc13d4e466ee9c1f8cad25658aae2384e898beed37c93b"
     },
     {
       "path": "deploy/cloudflare-edge/src/speech.js",
@@ -1727,8 +1727,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/test/snippets.test.js",
-      "bytes": 6980,
-      "sha256": "869be34129aba55cf41dbb8aa21d045f317cb2365c857aebc8a85814002c336b"
+      "bytes": 9062,
+      "sha256": "52d51d6a0192b38ab1939961ee28eda3e22d4a7e324b0c76660d65ff8c39da9e"
     },
     {
       "path": "deploy/cloudflare-edge/test/speech.test.js",

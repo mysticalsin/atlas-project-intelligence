@@ -82,3 +82,41 @@ test('evidence source name and version get the same masking as the text; the raw
   assert.deepEqual(s.rawSource, { name, version }, 'raw, like `raw`: for full-access readers only, never customer-facing');
   assert.deepEqual(snippetsOf(l, data('C', [], { sources: [{ excerpt: 'An excerpt long enough to keep.' }] }))[0].source, { name: '', version: '' });
 });
+
+test('a client name cut mid-token by the 400-character raw bound is scrubbed before that cut', async () => {
+  const prefix = 'The queue was slow before the change' + ' notes'.repeat(59);
+  const sentence = prefix + '  Zebracorp approved the rollout today and the team kept the new queue.';
+  assert.equal(prefix.length, 390);
+  assert.equal(sentence.indexOf('Zebracorp'), 392);
+  const cut = splitSentences(sentence)[0];
+  assert.equal(cut.length, 400);
+  assert.equal(cut.endsWith('Zebracor'), true);
+  assert.equal(cut.includes('Zebracorp'), false);
+  const l = await lib();
+  const d = data('Zebracorp', [sentence], { sources: [{ name: 'Zebracorp-notes.txt', version: 'v1', excerpt: sentence }] });
+  const s = snippetsOf(l, d);
+  const masked = prefix + '  the';
+  assert.equal(s.length, 2);
+  assert.deepEqual(s.map(x => x.kind), ['consultant_words', 'evidence']);
+  assert.deepEqual(s.map(x => x.raw), [cut, cut]);
+  assert.deepEqual(s.map(x => x.text), [masked, masked]);
+  assert.equal(s.every(x => !x.text.includes('Zebracorp') && !x.text.includes('Zebracor')), true);
+  assert.ok(s.every(x => x.text.length <= 400));
+  assert.equal(s[1].source.name, 'the client-notes.txt');
+  assert.ok(aligned(d, s));
+  // A longer name still does not fit in the raw cut, but its shorter replacement does, so the
+  // masked text must contain the replacement rather than stopping before the name.
+  const longName = 'ZebracorpHoldings';
+  const lead = prefix.slice(0, 389) + ' ';
+  const longSentence = lead + longName + ' approved the rollout today.';
+  assert.equal(lead.length, 390);
+  assert.equal(longSentence.indexOf(longName), 390);
+  const longCut = splitSentences(longSentence)[0];
+  assert.equal(longCut.endsWith('ZebracorpH'), true);
+  assert.equal(longCut.includes(longName), false);
+  const [longSnippet] = snippetsOf(l, data(longName, [longSentence]));
+  assert.equal(longSnippet.raw, longCut);
+  assert.equal(longSnippet.text, lead + 'the client');
+  assert.equal(longSnippet.text.includes('Zebracorp'), false);
+  assert.equal(longSnippet.text.length <= 400, true);
+});
