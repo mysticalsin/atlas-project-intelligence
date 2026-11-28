@@ -399,7 +399,7 @@ function subjectOpen(lib, o) {
   return lib.rows('SELECT status FROM gap_requests WHERE id = ?', o.subject_id)[0]?.status === 'open';
 }
 
-const ics = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+const ics = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 function emailDraft(lib, o, origin) {
   const p = parsed(o.payload), pv = obj(p.preview), link = origin + (p.path || PATH[o.kind](o.subject_id)), subject = p.subject || SUBJECT[o.kind];
   const body = o.kind === 'confirmation_request' ? link
