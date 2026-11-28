@@ -782,8 +782,8 @@
     },
     {
       "path": "atlas_voice/memory.py",
-      "bytes": 4120,
-      "sha256": "407d8e3d8eb3d582f26bb09ef114013587997bd04040bc5dd6276dd8fa3ed1e9"
+      "bytes": 4493,
+      "sha256": "42153414a2efb5a65064beaf6bd35c632dce6ee619bcf6f55d732f6d4849062f"
     },
     {
       "path": "atlas_voice/multiinstance.py",
@@ -3459,6 +3459,11 @@
       "path": "tests/test_handoff.py",
       "bytes": 53489,
       "sha256": "c2f0a00daea024cde0a7a83562820a9bc66ff424141c8ce5e4fd188b9e70bae4"
+    },
+    {
+      "path": "tests/test_memory_text.py",
+      "bytes": 2165,
+      "sha256": "de90af8c71e1a53b13299511609944e5dc6fd7b361dfbd1498f13fadc81b23aa"
     },
     {
       "path": "tests/test_page_harness.py",
