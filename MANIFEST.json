@@ -1237,8 +1237,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/telemetry.js",
-      "bytes": 9656,
-      "sha256": "485e8446b646d38f12ac9783029d109e42ca3fdc9a746e790453b7c93a84cbb6"
+      "bytes": 10058,
+      "sha256": "f3186e08932c2487e3f1f6820fdb06cc14799e1d2d08ccd6bff04d47038ce2a7"
     },
     {
       "path": "deploy/cloudflare-edge/src/timing-safe.js",
@@ -1794,6 +1794,11 @@
       "path": "deploy/cloudflare-edge/test/workerd-bin.js",
       "bytes": 1136,
       "sha256": "6f7a16085156e4f9f45e88939a8922410006efe74b3e4bf5f7db20fd4d5edff3"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/workflow-lane.test.js",
+      "bytes": 4182,
+      "sha256": "b697ed91b088036a1b092c54179dd68f928675fe82444bcefd79977529b0d29d"
     },
     {
       "path": "deploy/cloudflare-edge/test/write-begin-ident.test.js",
