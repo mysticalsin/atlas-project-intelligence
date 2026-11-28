@@ -952,8 +952,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/ask.js",
-      "bytes": 7616,
-      "sha256": "9b9fe8ffb310f226ca2dc3bc6e43f3cd480e61adfa4130529df3b6fa2822ecf0"
+      "bytes": 7925,
+      "sha256": "e536208dccbe64620f1f0dc82fa7b3f6084305e429fed7d415cfa25c67fa4754"
     },
     {
       "path": "deploy/cloudflare-edge/src/audit-chain.js",
@@ -1309,6 +1309,11 @@
       "path": "deploy/cloudflare-edge/test/app.test.js",
       "bytes": 75366,
       "sha256": "343a74e420315ae4b2b667e8d97401db494b48e02916fc0c4d955662d4ba03c9"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/ask-result-limit.test.js",
+      "bytes": 3624,
+      "sha256": "7b7c112ef9e83e612ccf3a3f2401164a29e13c9f01f4bffa0ca96a38e86fdf99"
     },
     {
       "path": "deploy/cloudflare-edge/test/ask.test.js",

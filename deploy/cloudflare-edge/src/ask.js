@@ -24,6 +24,15 @@ const NOTE = { empty_library: 'No references are available to you yet.', none: '
 const UNFLOORED = Object.freeze({ semantic: -Infinity, lexical: -Infinity });
 const norm = s => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 
+// Missing or blank stays at the default of six. A finite number, including zero,
+// is rounded and then clamped to 1..8.
+export function resultLimit(value) {
+  if (value === undefined || value === null || value === '') return 6;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 6;
+  return Math.max(1, Math.min(8, Math.round(n)));
+}
+
 export async function routes(ctx) {
   if (ctx.method !== 'POST' || ctx.parts.length !== 1) throw fail(404, 'Not found.');
   return { body: await ask(ctx.lib, ctx.user, obj(ctx.body)) };
@@ -33,7 +42,7 @@ async function ask(lib, user, b) {
   if (user?.tenantEnforced === true && !TENANT_ID.test(String(user?.tenant || ''))) throw fail(403, 'A verified tenant is required.');
   const question = str(b.question, 2000);
   if (question.length < 8 || question.length > 600) throw fail(400, 'Ask a question of 8 to 600 characters.');
-  const limit = Math.max(1, Math.min(8, Math.round(Number(b.limit)) || 6));
+  const limit = resultLimit(b.limit);
   if (!rateLimit(lib, 'ask:' + user.email, 60, 36e5)) throw fail(429, 'Too many questions this hour. Try again later.');
   let pool = lib.visibleRows(user).filter(([r, level]) => r.status === 'published' || level === 'full'), note = '';
   const named = new Set();
