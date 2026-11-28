@@ -742,8 +742,8 @@
     },
     {
       "path": "atlas_voice/editor.py",
-      "bytes": 8483,
-      "sha256": "87793202bb1506746d22f7dee899bf5d15af441c327007133faba4e3ea2423d1"
+      "bytes": 9056,
+      "sha256": "17e9a760013bde0ea7991e7bc0ab4a192b37f7772074f276bc984bf85f3d9fd2"
     },
     {
       "path": "atlas_voice/gaps.py",
@@ -3444,6 +3444,11 @@
       "path": "tests/test_edge.py",
       "bytes": 3039,
       "sha256": "ba934a8dfbaced8ee7bd51fc77ef258817cba2c63ca46f7ba6ddef1fc5fe6d2d"
+    },
+    {
+      "path": "tests/test_editor_limits.py",
+      "bytes": 2799,
+      "sha256": "490bad3c08e174b23492304861b333f3e6cbb52b2417790181e7832570243534"
     },
     {
       "path": "tests/test_editor_routes.py",
