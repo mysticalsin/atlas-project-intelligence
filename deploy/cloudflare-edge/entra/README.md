@@ -31,7 +31,7 @@ Sign-in is usually silent on Mantu-managed browsers (Windows single sign-on), wi
 Switching to Entra changes the person key from the email to `tid:oid`, so profile edits made under the email sign-in are not carried over; the sources refill the profile and people re-edit if needed.
 
 ## Enable (only with IT approval and a Mantu-owned Cloudflare account)
-1. `CLOUDFLARE_API_TOKEN` (Access: Apps and Policies Edit, Access: Organizations/IdPs Edit), `CF_ACCOUNT_ID`, `ACCESS_APP_ID`, `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` in the environment. Then `bash entra/enable_entra.sh --i-have-it-approval`. It adds the Entra connector with the `tid`/`oid`/`roles`/`preferred_username` claims followed by the name claims, and switches the ATLAS Access app to it.
+1. `CLOUDFLARE_API_TOKEN` (Access: Apps and Policies Edit, Access: Organizations/IdPs Edit), `CF_ACCOUNT_ID`, `ACCESS_APP_ID`, `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET` in the environment. Then `bash entra/enable_entra.sh --i-have-it-approval`. It adds the Entra connector with the `tid`/`oid`/`roles`/`preferred_username` claims followed by the name claims, and switches the ATLAS Access app to it. Do not run `enable_entra.sh` under `bash -x` or with `set -x`. A trace prints expanded values, including the API token and the client secret.
 2. Deploy with `--var IDENTITY_SOURCE:entra --var ENTRA_TENANTS:<tenant-id>`, plus `--var ENTRA_REQUIRED_ROLE:ATLAS.Interview` when the role (assigned to a group) is the gate.
 3. Test with two different assigned users and one unassigned user (who must be refused), plus a user from another tenant.
 
