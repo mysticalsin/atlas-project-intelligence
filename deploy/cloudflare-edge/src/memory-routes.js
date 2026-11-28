@@ -30,8 +30,9 @@ export async function memoryRoutes(request, { storage, hs, env, fetcher = fetch 
     if (request.method === 'POST' && path === 'forget') {
       if (!hs) return json({ error: 'Memory is not configured.' }, 404);
       if (body.all === true) { await hs.forgetAll(bank).catch(e => { if (e.status !== 404) throw e; }); return json({ forgotten: 'all' }); }
-      const id = String(body.documentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 100);
-      if (!id) return json({ error: 'Which memory?' }, 400);
+      // A stored document id is this token. Anything else is refused before a delete.
+      const id = String(body.documentId || '');
+      if (!/^[A-Za-z0-9_-]{1,100}$/.test(id)) return json({ error: 'Which memory?' }, 400);
       await hs.forgetDocument(bank, id); return json({ forgotten: id });
     }
     if (request.method === 'POST' && path === 'settings') {
