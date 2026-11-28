@@ -258,6 +258,12 @@ export function eraseManagerTrust(lib, tenant, aliases) {
   return ids.length;
 }
 
+// The purge keeps 7 to 3650 days. A blank, zero, or non-numeric setting is 180.
+// The disclosure names that same period.
+export function telemetryRetainDays(value) {
+  return Math.min(3650, Math.max(7, Number(value) || 180));
+}
+
 export async function privacyRoutes(ctx) {
   const { method, user, lib, env = {}, parts } = ctx;
   if (!user.email) throw fail(401, 'Sign in first.');
@@ -267,7 +273,7 @@ export async function privacyRoutes(ctx) {
       recording: 'The microphone starts only after the purpose consent for this session. Stop ends capture. Revoke deletes the local consent flag for spoken Ask.',
       textOnly: 'Project notes, the journey and the reference can be typed. Voice is optional.',
       retention: {
-        appTelemetryDays: Number(env.ATLAS_TELEMETRY_DAYS) || 180,
+        appTelemetryDays: telemetryRetainDays(env.ATLAS_TELEMETRY_DAYS),
         profileUnseenDays: 395,
         directoryPullCacheDays: 30,
         vendorDeletion: 'not-asserted',
@@ -340,7 +346,7 @@ export async function privacyRoutes(ctx) {
     return { body: { outcomes, ...dsarStores(), complete: false, vendorDeletion: 'not-asserted', note: 'Each store reports only what this request removed for this subject and tenant. A failure returns an error and removes nothing. Other tenants, other people, and blank-tenant rows are not counted. Stories, staffing, and audit history are not deleted. Quarantine is not deletion. Vendor deletion is not-asserted. This is not a GDPR certification.' } };  }
   if (method === 'POST' && user.role === 'admin' && parts[1] === 'purge-telemetry') {
     if (user.tenantEnforced === true && !TENANT_ID.test(String(user.tenant || ''))) throw fail(403, 'A verified tenant is required.');
-    return { body: purgeTelemetry(lib, Number(env.ATLAS_TELEMETRY_DAYS) || 180, user) };
+    return { body: purgeTelemetry(lib, telemetryRetainDays(env.ATLAS_TELEMETRY_DAYS), user) };
   }
   throw fail(404, 'Not found.');
 }
