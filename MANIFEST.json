@@ -1102,8 +1102,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/outreach.js",
-      "bytes": 47116,
-      "sha256": "542013df8e28ff4e7ba19d35b8f640ccc6b5596ccba669e021fdba3848d869b9"
+      "bytes": 47721,
+      "sha256": "67f169f19b25b8635882d9768d60682032c2d16c8cc1389de0bab23396ed6ea6"
     },
     {
       "path": "deploy/cloudflare-edge/src/package.json",
@@ -1344,6 +1344,11 @@
       "path": "deploy/cloudflare-edge/test/breaker.test.js",
       "bytes": 8314,
       "sha256": "6040701ab41e3db0a189c2c5dc3e00b480654f8dc588078a12da813f23a3fe75"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/calendar-slot.test.js",
+      "bytes": 3373,
+      "sha256": "6c4e88cc2242312f4091ee0b527e70439bc28ca0cfa4015b09557cfa58ea12b6"
     },
     {
       "path": "deploy/cloudflare-edge/test/chain-callers.mjs",
