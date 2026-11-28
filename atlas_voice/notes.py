@@ -58,7 +58,10 @@ async def make_notes(config, http, pcm):
                 request = riva_asr_pb2.RecognizeRequest(config=recognition_config, audio=pcm16[offset:offset+size])
                 response = service.stub.Recognize(request, metadata=auth.get_auth_metadata(), timeout=min(60, remaining))
                 parts.extend(r.alternatives[0].transcript for r in response.results if r.alternatives)
-                if sum(map(len, parts)) > 60000:
+                # The cap is the transcript that is returned. A space is inserted between
+                # recognition results, so the piece lengths alone can stay on the cap
+                # while the joined text is longer.
+                if len(' '.join(parts)) > 60000:
                     raise ValueError('Transcription text budget reached.')
             return ' '.join(parts)
 
