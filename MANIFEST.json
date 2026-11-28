@@ -747,8 +747,8 @@
     },
     {
       "path": "atlas_voice/gaps.py",
-      "bytes": 6473,
-      "sha256": "850fa11b2cfbd4daa78521e250f00b15718356854a2a90abbe9477ba16d55aed"
+      "bytes": 7339,
+      "sha256": "1b1ec97e3b884ad85e5af10715b239af0eead5992e619c1f0f0a929130047956"
     },
     {
       "path": "atlas_voice/identity.py",
@@ -1027,8 +1027,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/gap-policy.js",
-      "bytes": 4388,
-      "sha256": "65eeb96e5255587a42d01015121b0b415a05048dc074b5723475aef1e5683f69"
+      "bytes": 5244,
+      "sha256": "f0c63d293c918f27aaf1c02355aff5fd8c9a61cb08ad26635c1a4f4850e3e31e"
     },
     {
       "path": "deploy/cloudflare-edge/src/gaps.js",
@@ -1389,6 +1389,11 @@
       "path": "deploy/cloudflare-edge/test/gap-policy.test.js",
       "bytes": 2689,
       "sha256": "08aba10f497e2238adf634c0265ce8d6b01a1ee79235bc8e473937d3729567e4"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/gap-unspaced-answer.test.js",
+      "bytes": 2316,
+      "sha256": "5f9d7d189c3d2c590b9b28422a553252a016a39a566de361f6dc7238bbc29233"
     },
     {
       "path": "deploy/cloudflare-edge/test/gap.vectors.json",
@@ -3454,6 +3459,11 @@
       "path": "tests/test_entra_claims.py",
       "bytes": 1650,
       "sha256": "d89fca153b047a2cff876dfbdfa890ca7810c86de7f72469f5b051f7fab1fba6"
+    },
+    {
+      "path": "tests/test_gap_unspaced_answer.py",
+      "bytes": 2187,
+      "sha256": "c956e4d614dd1f0905943e99bf38f2c876efe3675d9debfd68c6af671ba859e0"
     },
     {
       "path": "tests/test_handoff.py",
