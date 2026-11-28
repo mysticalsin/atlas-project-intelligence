@@ -1132,8 +1132,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/profile.js",
-      "bytes": 49365,
-      "sha256": "0cf2f6dba5fdf0132eb2c4c65f57347449c41f4382fa2b07fb4c4626bfe9487e"
+      "bytes": 49549,
+      "sha256": "6d554dec7a377990568e2e3599a869f6133ae4a4c7c7c9c3026dcd00423fa6ef"
     },
     {
       "path": "deploy/cloudflare-edge/src/publication.js",
@@ -1374,6 +1374,11 @@
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
       "bytes": 4946,
       "sha256": "f12dff6c293bc89963567587e2c7de347fc939fe0f0ea74d2f8bddecd0184ee8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/dna-body-cancel.test.js",
+      "bytes": 3069,
+      "sha256": "d4448954125bcdad9fcbb97c915167d01e59189a82af8e5624a0beb4ee09cd8d"
     },
     {
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
