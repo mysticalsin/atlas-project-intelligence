@@ -812,8 +812,8 @@
     },
     {
       "path": "atlas_voice/report.py",
-      "bytes": 8307,
-      "sha256": "d354b80dbf4569d7ba7bb661458f9fed54c887c6d490b6bcf367b67a0b3afc3f"
+      "bytes": 10116,
+      "sha256": "f4d5e268b114dc1825068694a82d22841cc6a842896bff22b76c073c3a802954"
     },
     {
       "path": "atlas_voice/server.py",
@@ -1152,8 +1152,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/report.js",
-      "bytes": 4038,
-      "sha256": "91d5ee02082eb82173f4ffed5dfc272743c2a27c378c0538b829dedd614b4d68"
+      "bytes": 5908,
+      "sha256": "1c3eaf3a6b97b3c34602d3dae9e151c9924b3722fff8e3f6421174f143bf927b"
     },
     {
       "path": "deploy/cloudflare-edge/src/retention.js",
@@ -1586,14 +1586,19 @@
       "sha256": "22eca6ffcdf41b1da42b557802486346d43d03d8cfc9855353afbe7fceac5021"
     },
     {
+      "path": "deploy/cloudflare-edge/test/report-speaker.test.js",
+      "bytes": 1256,
+      "sha256": "8f35993a0ca4a310ee530b1e10120d203abc07dc937db84e1351762cbebc448e"
+    },
+    {
       "path": "deploy/cloudflare-edge/test/report.test.js",
       "bytes": 1115,
       "sha256": "e30c0bdbbfaf14f18904744290e7e0770dba8239866bc81ffdbbbdae3a5caabb"
     },
     {
       "path": "deploy/cloudflare-edge/test/report.vectors.json",
-      "bytes": 62615,
-      "sha256": "011dff431e3909410e3b33863df48be98589f562402308e6365143d849e942e8"
+      "bytes": 62627,
+      "sha256": "84894a6001dc18147b57f1a66d30b639e905f4f9de568c67cd8ccd50639643f3"
     },
     {
       "path": "deploy/cloudflare-edge/test/reuse.test.js",
@@ -3494,6 +3499,11 @@
       "path": "tests/test_report.py",
       "bytes": 3187,
       "sha256": "7ae2d5eb255557e350bf84faf2bdc98468bf082fe6f33c64241d53a38d56fa0e"
+    },
+    {
+      "path": "tests/test_report_speaker.py",
+      "bytes": 1166,
+      "sha256": "51bc186418ec3753f76145888c65acecfe8dd573ca08dc10f4b0305c318a670d"
     },
     {
       "path": "tests/test_review_ui.py",

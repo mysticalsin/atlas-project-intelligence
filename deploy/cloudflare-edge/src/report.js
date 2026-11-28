@@ -22,13 +22,46 @@ export class EndMarker {
   }
 }
 
+const SPEAKER_ROLES = ['Consultant: ', 'ATLAS: '];
+const OMITTED = '\n[... middle of the interview omitted ...]\n';
+// A cut inside a short line keeps that whole line. A much longer line keeps a labeled tail.
+const TAIL_LINE = 400;
+const speaker = line => SPEAKER_ROLES.find(role => line.startsWith(role)) || '';
+const isSpace = ch => ch === ' ' || ch === '\n' || ch === '\t' || ch === '\r' || ch === '\f' || ch === '\v';
+
+// Head and tail of a long interview. Every kept line still names ATLAS or the consultant.
+// A raw character cut can start the tail inside an ATLAS sentence. The report model
+// would then read the interviewer's words as the consultant's.
+function boundedTranscript(transcript) {
+  if (transcript.length <= REPORT_TRANSCRIPT_CHARS) return transcript;
+  const headN = Math.floor(REPORT_TRANSCRIPT_CHARS / 3), tailN = REPORT_TRANSCRIPT_CHARS - headN;
+  let head = transcript.slice(0, headN);
+  if (headN < transcript.length && transcript[headN - 1] !== '\n') {
+    const lineStart = head.lastIndexOf('\n') + 1, partial = head.slice(lineStart), role = speaker(transcript.slice(lineStart));
+    if (!(role && partial.length >= role.length && partial.startsWith(role))) {
+      const cut = head.lastIndexOf('\n');
+      if (cut >= 0) head = head.slice(0, cut);
+    }
+  }
+  const tailStart = transcript.length - tailN, lineStart = transcript.lastIndexOf('\n', tailStart - 1) + 1;
+  const role = speaker(transcript.slice(lineStart)), extra = tailStart - lineStart;
+  let tail;
+  if (extra <= 0 || transcript[tailStart] === '\n') tail = transcript.slice(tailStart);
+  else if (role && extra <= TAIL_LINE) tail = transcript.slice(lineStart);
+  else if (role) {
+    let chunk = transcript.slice(tailStart);
+    if (extra > role.length && !isSpace(transcript[tailStart - 1]) && !isSpace(transcript[tailStart])) {
+      const space = chunk.indexOf(' '), newline = chunk.indexOf('\n');
+      if (space >= 0 && space < 40 && (newline < 0 || space < newline)) chunk = chunk.slice(space + 1);
+    }
+    tail = role + chunk;
+  } else tail = transcript.slice(tailStart);
+  return head + OMITTED + tail;
+}
+
 // history: [{role: 'user'|'assistant', content}] in speaking order. Keeps the head and the tail of long interviews.
 export function reportMessages(history, sections, stage) {
-  let transcript = history.filter(m => m?.content).map(m => (m.role === 'user' ? 'Consultant: ' : 'ATLAS: ') + String(m.content)).join('\n');
-  if (transcript.length > REPORT_TRANSCRIPT_CHARS) {
-    const head = Math.floor(REPORT_TRANSCRIPT_CHARS / 3);
-    transcript = transcript.slice(0, head) + '\n[... middle of the interview omitted ...]\n' + transcript.slice(-(REPORT_TRANSCRIPT_CHARS - head));
-  }
+  const transcript = boundedTranscript(history.filter(m => m?.content).map(m => (m.role === 'user' ? 'Consultant: ' : 'ATLAS: ') + String(m.content)).join('\n'));
   const notes = Object.fromEntries(REPORT_TOPICS.map((t, i) => [t, sections[i] ?? '']));
   return [{ role: 'system', content: REPORT_POLICY },
     { role: 'user', content: JSON.stringify({ project_stage: stage, interview_transcript: transcript, quote_linked_notes: notes }) }];
