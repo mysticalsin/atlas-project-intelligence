@@ -16,6 +16,19 @@ import { limitRoute } from './ratelimit.js';
 import { loadState, memoryAllowed, recordConsent } from './privacy.js';
 import { auditKey } from './audit-chain.js';
 
+// Same project-tag rule as jevRelevant. A failed check does not answer, so another
+// project's memory is not kept. Untagged text is not treated as this project.
+export function memoriesAfterFailedRelevance(found, project) {
+  const current = 'project:' + String(project?.id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  const rows = Array.isArray(found) ? found : [];
+  const kept = [];
+  for (let i = 0; i < rows.length; i++) {
+    const tags = rows[i] && Array.isArray(rows[i].tags) ? rows[i].tags : null;
+    if (tags && tags.includes(current)) kept.push(rows[i]);
+  }
+  return kept;
+}
+
 export default {
   fetch: (request, env, ctx) => handle(request, env, page, { waitUntil: p => ctx.waitUntil(p), log: line => console.log(line) }),
   // Daily: references not updated for six months get an update invitation for their owner (never auto-sent).
@@ -44,7 +57,14 @@ export class Interview extends DurableObject {
     const memory = this.hs && bank && memoryAllowed(consent) && (await this.ctx.storage.get('memoryOff')) !== true ? async project => {
       const t0 = Date.now(); let found = await this.hs.recall(bank, recallQuery(project), { tags: project?.id && project.id !== 'new' ? ['project:' + project.id] : undefined });
       const n = found.length; let checked = 0;
-      try { const j = await jevRelevant(this.env, found, project); found = j.memories; checked = j.checked; } catch { metric('memory_jev_error', {}); }
+      try {
+        const j = await jevRelevant(this.env, found, project);
+        found = j.memories;
+        checked = j.checked;
+      } catch {
+        metric('memory_jev_error', {});
+        found = memoriesAfterFailedRelevance(found, project);
+      }
       metric('memory_recall', { ms: Date.now() - t0, found: n, kept: found.length, jev_checked: checked });
       return memoryNote(found);
     } : null;
