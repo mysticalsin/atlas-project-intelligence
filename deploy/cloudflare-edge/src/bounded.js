@@ -10,9 +10,11 @@ export async function boundedBytes(request, max) {
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
-    n += value.length;
+    // The stream may reuse this buffer on the next read. Copy before that.
+    const copy = new Uint8Array(value);
+    n += copy.length;
     if (n > max) { await reader.cancel().catch(() => {}); return null; }
-    parts.push(value);
+    parts.push(copy);
   }
   const out = new Uint8Array(n);
   let at = 0;

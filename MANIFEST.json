@@ -972,8 +972,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/bounded.js",
-      "bytes": 1541,
-      "sha256": "87c12890c6fee8df216f3e18668cbe0c2bab232a67cc1baefd3f93395044e676"
+      "bytes": 1655,
+      "sha256": "13db5ad8a6e2cdba7bff0bb8d729f187ff31bda80430ef80a738253aa6f9b005"
     },
     {
       "path": "deploy/cloudflare-edge/src/breaker.js",
@@ -1334,6 +1334,11 @@
       "path": "deploy/cloudflare-edge/test/blocked-subject-length.test.js",
       "bytes": 1002,
       "sha256": "092f78f189cf6163616d64c3ce5b12dd00e1719733a39aac22c1716292fcb467"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/bounded-copy.test.js",
+      "bytes": 1216,
+      "sha256": "e70e80051c88f010414731a4b1723b732446fac958381c842c1e956027ca9a58"
     },
     {
       "path": "deploy/cloudflare-edge/test/breaker.test.js",
