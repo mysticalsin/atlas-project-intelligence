@@ -59,19 +59,28 @@ _GIT_SHORT = re.compile(r'^git~[0-9]+(\..*)?$')
 
 
 def _strip_ads(part: str) -> str:
+    """Drop trailing dots, spaces, and ::$INDEX_ALLOCATION, in either order.
+
+    Windows strips a trailing dot or space from the component, so
+    ``.git::$INDEX_ALLOCATION.`` is the same metadata name as
+    ``.git::$INDEX_ALLOCATION``. Stripping the stream only when it is
+    already at the end misses that spelling.
+    """
     text = part
-    while text.casefold().endswith(_ADS_SUFFIX):
-        text = text[:-len(_ADS_SUFFIX)]
+    while text:
+        if text.casefold().endswith(_ADS_SUFFIX):
+            text = text[:-len(_ADS_SUFFIX)]
+            continue
+        if text.endswith('.') or text.endswith(' '):
+            text = text[:-1]
+            continue
+        break
     return text
 
 
 def _normalize_component(part: str) -> str:
-    """Casefold an ASCII component and strip trailing dots and spaces."""
-    text = _strip_ads(part)
-    text = text.casefold()
-    while text.endswith('.') or text.endswith(' '):
-        text = text[:-1]
-    return text
+    """Casefold an ASCII component and strip trailing dots, spaces, and ::$INDEX_ALLOCATION."""
+    return _strip_ads(part).casefold()
 
 
 def path_has_non_ascii(rel: str) -> bool:
