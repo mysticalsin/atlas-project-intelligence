@@ -44,7 +44,9 @@ export function choose(plan, guidance, scores) {
   const current = scores[plan.next_field];
   let best = plan.next_field;
   for (const [f, s] of Object.entries(scores)) if (s.score > scores[best].score) best = f;
-  if (best === plan.next_field || scores[best].score < current.score + 0.5 || scores[best].confidence < 0.6) return null;
+  // A lead of 0.5 is enough. Adding the two decimals can make that lead look smaller.
+  const margin = scores[best].score - current.score;
+  if (best === plan.next_field || margin + 1e-9 < 0.5 || scores[best].confidence < 0.6) return null;
   return { ...guidance, field: best, label: FIELDS[best][0], question: FIELDS[best][1], ranked_by: 'jev',
     why: `JEV ranked this the most valuable next question (${scores[best].score.toFixed(1)}/4, confidence ${scores[best].confidence.toFixed(2)}).` };
 }

@@ -1042,8 +1042,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/jev.js",
-      "bytes": 4218,
-      "sha256": "0b1b4b5ca13a051209d4a45560d43e017f87f17bc83770f171244234736932e7"
+      "bytes": 4337,
+      "sha256": "a727f5476067256d400369a20b672c6891e67920f38c0f3103f5145c37e94492"
     },
     {
       "path": "deploy/cloudflare-edge/src/journey.js",
@@ -1459,6 +1459,11 @@
       "path": "deploy/cloudflare-edge/test/jev-customer.vectors.json",
       "bytes": 186993,
       "sha256": "2e0f10aab464ebb5e0f27504504bae5977cbef3a53ef32d17b57569d7c375087"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/jev-margin.test.js",
+      "bytes": 1481,
+      "sha256": "72d84841cdbc781f1b093a06450a94182d73df5665803051d443fda1a9fec882"
     },
     {
       "path": "deploy/cloudflare-edge/test/jev.test.js",
