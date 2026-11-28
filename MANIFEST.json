@@ -2862,8 +2862,8 @@
     },
     {
       "path": "src/docx.js",
-      "bytes": 15265,
-      "sha256": "2116e4009ea56999e33b14d9a62f3c12c0a2460919e4c9a546fa5fe3ff083d32"
+      "bytes": 15277,
+      "sha256": "2324acab96235ba2ea4ce8244d5bd69066c34bdfc722144fb3d5530583c6ec1e"
     },
     {
       "path": "src/engine.js",
@@ -3134,6 +3134,11 @@
       "path": "tests/directory-ui.test.js",
       "bytes": 5412,
       "sha256": "5e3abc1f50fe34feed11cc23a3e93518c3a18b8c5fd972c8a6c43189627faf35"
+    },
+    {
+      "path": "tests/docx-xml-chars.test.js",
+      "bytes": 3790,
+      "sha256": "bc2b5511e611ba6b645a590aaf5dd2215fb0fbdd06d74be6c2b6ea22e01677e0"
     },
     {
       "path": "tests/engine.test.js",
