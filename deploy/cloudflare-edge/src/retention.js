@@ -4,6 +4,7 @@
 // the platform, a per-person prune or a Durable Object alarm (see notSwept).
 import { RETENTION } from './policy.generated.js';
 import { eraseRefContent } from './subject-rights.js';
+import { isoFrom, parseDate } from './primordials.js';
 import * as privacy from './privacy.js';
 
 const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
@@ -11,7 +12,14 @@ const token = () => 'erased:' + [...crypto.getRandomValues(new Uint8Array(6))].m
 const SYSTEM_ACTORS = new Set(['atlas', 'atlas-cron', 'library', 'pm-system', 'dna-push', 'system', 'privacy']);
 const tableExists = (lib, name) => lib.rows("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", name).length > 0;
 const cat = (retention, id) => retention.categories.find(c => c.id === id);
-const before = (now, c) => new Date(Date.parse(now) - (c.hours ? c.hours * 36e5 : c.days * 864e5)).toISOString();
+// Captured at load. A later Date.parse or toISOString must not move this cutoff.
+function before(now, category) {
+  const parsed = parseDate(now);
+  const span = category && category.hours ? category.hours * 36e5 : ((category && category.days) || 0) * 864e5;
+  const cut = parsed == null ? null : isoFrom(parsed - span);
+  if (cut == null) throw Object.assign(new Error('The retention clock is not a finite time.'), { status: 500 });
+  return cut;
+}
 
 const TENANT_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const hasTenantColumn = (lib, table) => tableExists(lib, table) && lib.rows("SELECT 1 AS x FROM pragma_table_info('" + table + "') WHERE name = 'tenant'").length > 0;
@@ -55,7 +63,7 @@ export function sweep(lib, { now = lib.now(), retention = RETENTION, tenant } = 
   }
   // Expired confirmation and proof requests (90 days after they expired; a proof request expires 30 days after it was made).
   if (c('expired_requests') && hasTenantColumn(lib, 'confirmation_requests')) {
-    const cut = before(now, c('expired_requests')), gapCut = new Date(Date.parse(cut) - 30 * 864e5).toISOString();
+    const cut = before(now, c('expired_requests')), gapCut = before(cut, { days: 30 });
     const n = lib.rows('SELECT COUNT(*) AS n FROM confirmation_requests WHERE expires_at < ? AND ' + scope, cut, tid)[0].n;
     if (n) { lib.exec('DELETE FROM confirmation_requests WHERE expires_at < ? AND ' + scope, cut, tid); add('confirmationRequests', n); }
     if (hasTenantColumn(lib, 'gap_requests')) {
