@@ -339,7 +339,8 @@ async function match({ lib, user, body, env }, row) {
   return matchOut(lib, user, stored, viewOf(lib, user, row));
 }
 
-const industryBoost = (sectorText, row) => { const s = String(row.data?.sector || '').toLowerCase().split(/\s+/)[0]; return sectorText && s.length >= 3 && sectorText.includes(s) ? 0.05 : 0; };
+// A sector token matches only as its own word. Air does not boost a requirement that says repair or airline.
+const industryBoost = (sectorText, row) => { const s = String(row.data?.sector || '').toLowerCase().split(/\s+/)[0]; return sectorText && s.length >= 3 && names(sectorText, s) ? 0.05 : 0; };
 
 // Retrieval (reuse.rankPool: per-method floor, semantic first, boosts reorder only), then JEV when asked and
 // consented, else (or when JEV fails) BID_RANK_POLICY. Stored text is placeholder form with recordText applied.
