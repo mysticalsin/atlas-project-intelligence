@@ -772,8 +772,8 @@
     },
     {
       "path": "atlas_voice/kyutai.py",
-      "bytes": 4562,
-      "sha256": "2f366180d5691821a87812e873a820fa3292b7ff1a05fb76c65ea3ce78ac50d6"
+      "bytes": 5833,
+      "sha256": "d017da079168f9aac08bc6554fc6b0b2138803ab02e9c282a6761deeb9b79aa4"
     },
     {
       "path": "atlas_voice/languages.py",
@@ -3459,6 +3459,11 @@
       "path": "tests/test_handoff.py",
       "bytes": 53489,
       "sha256": "c2f0a00daea024cde0a7a83562820a9bc66ff424141c8ce5e4fd188b9e70bae4"
+    },
+    {
+      "path": "tests/test_kyutai_sse.py",
+      "bytes": 2254,
+      "sha256": "2e1f6707a2adcc2328a16a7deff847f3b7bb767421393e0d82b23ee8e54252da"
     },
     {
       "path": "tests/test_page_harness.py",

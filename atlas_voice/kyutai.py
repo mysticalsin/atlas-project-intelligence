@@ -92,6 +92,50 @@ def connect_tts(http, base, key, voice):
     return connect(http, base, TTS_PATH, key, '?format=PcmMessagePack&cfg_alpha=1.5&voice=' + quote(voice, safe=''))
 
 
+_DONE = object()
+
+
+def _event_lines(buffer, final):
+    """SSE lines. CR, LF and CRLF each end a line. A CR at the end of a chunk waits, in case the next byte is LF.
+    When the body ends, the remaining bytes are a line too, so the last delta is not dropped."""
+    lines = []
+    start = 0
+    i = 0
+    size = len(buffer)
+    while i < size:
+        if buffer[i] == 10:
+            lines.append(buffer[start:i])
+            i += 1
+            start = i
+            continue
+        if buffer[i] == 13:
+            if i + 1 == size and not final:
+                break
+            lines.append(buffer[start:i])
+            i += 2 if i + 1 < size and buffer[i + 1] == 10 else 1
+            start = i
+            continue
+        i += 1
+    if final and start < size:
+        lines.append(buffer[start:])
+        start = size
+    return lines, buffer[start:]
+
+
+def _chat_delta(line):
+    line = line.strip()
+    if not line.startswith(b'data:'):
+        return None
+    payload = line[5:].strip()
+    if payload == b'[DONE]':
+        return _DONE
+    try:
+        delta = json.loads(payload)['choices'][0].get('delta', {}).get('content') or ''
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+    return delta or None
+
+
 async def stream_chat(http, url, model, key, messages, max_tokens=300):
     """Yield text deltas from an OpenAI-compatible streaming chat completion (SSE)."""
     headers = {'Authorization': 'Bearer ' + key} if key else {}
@@ -100,19 +144,26 @@ async def stream_chat(http, url, model, key, messages, max_tokens=300):
                          timeout=aiohttp.ClientTimeout(total=45, sock_read=15)) as response:
         response.raise_for_status()
         buffer = b''
+
+        def take(final):
+            nonlocal buffer
+            lines, buffer = _event_lines(buffer, final)
+            deltas = []
+            for line in lines:
+                delta = _chat_delta(line)
+                if delta is _DONE:
+                    return deltas, True
+                if delta:
+                    deltas.append(delta)
+            return deltas, False
+
         async for chunk in response.content.iter_any():
             buffer += chunk
-            while b'\n' in buffer:
-                line, buffer = buffer.split(b'\n', 1)
-                line = line.strip()
-                if not line.startswith(b'data:'):
-                    continue
-                payload = line[5:].strip()
-                if payload == b'[DONE]':
-                    return
-                try:
-                    delta = json.loads(payload)['choices'][0].get('delta', {}).get('content') or ''
-                except (ValueError, KeyError, IndexError, TypeError):
-                    continue
-                if delta:
-                    yield delta
+            deltas, done = take(False)
+            for delta in deltas:
+                yield delta
+            if done:
+                return
+        deltas, _done = take(True)
+        for delta in deltas:
+            yield delta
