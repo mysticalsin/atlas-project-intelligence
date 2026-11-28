@@ -1272,8 +1272,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/teams/build_teams_package.py",
-      "bytes": 15238,
-      "sha256": "db68914c2b1d7e8d48e8af6d607e60c1a490cbef57cead4e16250585ab4f5cc2"
+      "bytes": 16039,
+      "sha256": "21733d491c959717175fbc40bfd1b2c2206525e061314a255e595651a44f2c05"
     },
     {
       "path": "deploy/cloudflare-edge/teams/color.png",
@@ -3494,6 +3494,11 @@
       "path": "tests/test_report.py",
       "bytes": 3187,
       "sha256": "7ae2d5eb255557e350bf84faf2bdc98468bf082fe6f33c64241d53a38d56fa0e"
+    },
+    {
+      "path": "tests/test_resource_url.py",
+      "bytes": 2575,
+      "sha256": "0bc6c866e3203cfd1abb286f1b9337c226f4a5a552c9c9ecbd161c835f477460"
     },
     {
       "path": "tests/test_review_ui.py",

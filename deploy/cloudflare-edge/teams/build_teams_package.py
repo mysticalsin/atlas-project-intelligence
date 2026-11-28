@@ -21,6 +21,7 @@ import sys
 import zipfile
 import zlib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / 'manifest.template.json'
@@ -44,6 +45,15 @@ class PackageError(Exception):
     """The package cannot be built; the message lists every reason."""
 
 
+def url_has_userinfo(value):
+    """True when a URL carries a username or password. Those must not enter the package."""
+    try:
+        parts = urlsplit(str(value))
+    except ValueError:
+        return True
+    return parts.username is not None or parts.password is not None
+
+
 def fill(text, env, draft=False):
     """Replace {{NAME}} with env[NAME] (validated, JSON-escaped). Returns (text, missing names)."""
     missing, bad = [], []
@@ -57,6 +67,8 @@ def fill(text, env, draft=False):
         rule = VALUES.get(name)
         if rule and not rule.match(value):
             bad.append(f'{name} has an invalid value (expected {"a GUID" if rule is GUID else "a host name without scheme or path" if rule is HOST else "an https:// URL" if rule is HTTPS else "a short name"}).')
+        elif rule is HTTPS and url_has_userinfo(value):
+            bad.append(f'{name} must be an https:// URL without a username or password.')
         return json.dumps(value)[1:-1]
     out = PLACEHOLDER.sub(one, text)
     if bad:
@@ -89,6 +101,8 @@ def check_builtin(m):
         _check_len(errors, f'developer.{k}', dev.get(k), 2048)
         if isinstance(dev.get(k), str) and dev.get(k) and not HTTPS.match(dev[k]):
             errors.append(f'developer.{k} must be an https:// URL.')
+        elif isinstance(dev.get(k), str) and url_has_userinfo(dev.get(k)):
+            errors.append(f'developer.{k} must be an https:// URL without a username or password.')
     name = m.get('name') if isinstance(m.get('name'), dict) else {}
     _check_len(errors, 'name.short', name.get('short'), 30)
     if 'full' in name:
@@ -108,6 +122,8 @@ def check_builtin(m):
         for k in ('contentUrl', 'websiteUrl'):
             if k in tab and (not HTTPS.match(str(tab[k])) or len(str(tab[k])) > 2048):
                 errors.append(f'staticTabs[{i}].{k} must be an https:// URL of at most 2048 characters.')
+            elif k in tab and url_has_userinfo(tab[k]):
+                errors.append(f'staticTabs[{i}].{k} must be an https:// URL without a username or password.')
         if 'name' in tab:
             _check_len(errors, f'staticTabs[{i}].name', tab.get('name'), 128)
     for i, bot in enumerate(m.get('bots', []) or []):
