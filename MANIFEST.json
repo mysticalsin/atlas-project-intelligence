@@ -2822,8 +2822,8 @@
     },
     {
       "path": "scripts/wiki_access.py",
-      "bytes": 1334,
-      "sha256": "30b1592a159abc020c2612509399f3da9a4a12fc4a806519331f9f1d3b2a02de"
+      "bytes": 1971,
+      "sha256": "6a89c51498dc2859485dcf669c0a513741ef7c35d94a76b63801ad2357bc96b7"
     },
     {
       "path": "src/admin-metrics-machine.js",
@@ -3484,6 +3484,11 @@
       "path": "tests/test_quality.py",
       "bytes": 13649,
       "sha256": "70927eb18bc0af7133b08237160473a2f2c5b61412285d86e095259cc4365e7d"
+    },
+    {
+      "path": "tests/test_quality_grant.py",
+      "bytes": 4302,
+      "sha256": "6124fe3d61fb9bb1a37843b5873a4abd4c2fb24f8b2017040074441afd6767bb"
     },
     {
       "path": "tests/test_realtime.py",
