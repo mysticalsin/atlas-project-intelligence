@@ -16,7 +16,7 @@ import unicodedata
 CONFUSABLES = {
     # Cyrillic
     'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x', 'і': 'i', 'ј': 'j', 'ѕ': 's',
-    'ԁ': 'd', 'һ': 'h', 'ԛ': 'q', 'ԝ': 'w', 'ѵ': 'v', 'к': 'k', 'ӏ': 'l', 'ґ': 'r',
+    'ԁ': 'd', 'һ': 'h', 'ԛ': 'q', 'ԝ': 'w', 'ѵ': 'v', 'к': 'k', 'ӏ': 'l', 'ґ': 'g',  # U+0491 ghe with upturn looks like g
     # Greek
     'ο': 'o', 'ν': 'v', 'ρ': 'p', 'ι': 'i', 'α': 'a', 'κ': 'k', 'υ': 'u', 'χ': 'x',
     # Armenian and a few Latin look-alikes that NFKC leaves alone
