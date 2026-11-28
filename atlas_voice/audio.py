@@ -2,12 +2,33 @@
 
 No files, shell invocation, uploaded codecs, or microphone data in logs.
 Each session owns two bounded OS pipes and destroys both processes on exit.
+The codec process receives a path and locale only. Gateway secrets stay in the parent.
 """
 import asyncio
 import contextlib
+import os
 
 SAMPLE_RATE = 24000
 FRAME_BYTES = 960  # 20 ms, mono, signed little-endian PCM16
+
+# Executable lookup, locale, temp files, and dynamic linker. Nothing else.
+_CODEC_ENV = (
+    'PATH', 'HOME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+    'TMPDIR', 'TMP', 'TEMP',
+    'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH',
+    'SYSTEMROOT', 'WINDIR', 'PATHEXT', 'COMSPEC',
+)
+
+
+def codec_environment(source=None):
+    base = os.environ if source is None else source
+    kept = {}
+    for key in _CODEC_ENV:
+        value = base.get(key)
+        if isinstance(value, str) and value and '\0' not in value and '\n' not in value and '\r' not in value:
+            kept[key] = value
+    return kept
+
 
 class AudioCodec:
     def __init__(self, ffmpeg='ffmpeg'):
@@ -23,10 +44,11 @@ class AudioCodec:
         dec = common + ['-f', 'ogg', '-i', 'pipe:0', '-ar', '24000', '-ac', '1',
                         '-f', 's16le', '-flush_packets', '1', 'pipe:1']
         try:
+            env = codec_environment()
             self.encoder = await asyncio.create_subprocess_exec(*enc, stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=32768)
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=32768, env=env)
             self.decoder = await asyncio.create_subprocess_exec(*dec, stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=32768)
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=32768, env=env)
         except BaseException:
             await self.close()
             raise
