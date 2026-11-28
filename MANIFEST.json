@@ -882,8 +882,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-hindsight.mjs",
-      "bytes": 2450,
-      "sha256": "e0cd3841825c051b9e790ca2acf4a55a43ab8f3a21459c1108f9524522644464"
+      "bytes": 2709,
+      "sha256": "dd413f5e2955319fc6b49b15d5b342414727d37b6cd9df033be4c518be520ec8"
     },
     {
       "path": "deploy/cloudflare-edge/dev/fake-model.mjs",
@@ -1429,6 +1429,11 @@
       "path": "deploy/cloudflare-edge/test/gen_speech_parity.py",
       "bytes": 3923,
       "sha256": "4ddeaa366dafd174677abecb337877b2cefdabaf2c53003566f25400b0ddd8ed"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/hindsight-title-word.test.js",
+      "bytes": 2916,
+      "sha256": "3547beade0850995aed54d4bf80977c74f810e2f5fc183984761c5ff80dc17f0"
     },
     {
       "path": "deploy/cloudflare-edge/test/hold.js",
