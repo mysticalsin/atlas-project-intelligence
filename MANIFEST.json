@@ -2867,8 +2867,8 @@
     },
     {
       "path": "src/engine.js",
-      "bytes": 33733,
-      "sha256": "f72f4f20c6dd5a9c4e259cba136e7ab5d04aa28f6383ad0649a05cff26e959a1"
+      "bytes": 34290,
+      "sha256": "9ef17316900c392b6b36f2da293fee48519edc3543763bab3198ef7efe655d6e"
     },
     {
       "path": "src/erasure-machine.js",
@@ -3539,6 +3539,11 @@
       "path": "tests/upstream-source-check.json",
       "bytes": 432,
       "sha256": "4e34cbb62d7326ca21a8e6f0eb04304051832144fec1824574a9f6d3b3eb5dcf"
+    },
+    {
+      "path": "tests/validation-email-client.test.js",
+      "bytes": 2399,
+      "sha256": "708a7bc2573eb51ca39e5d817d9e41b253df276ba6ac421bc822be2258e84a73"
     },
     {
       "path": "tests/worklet.test.js",

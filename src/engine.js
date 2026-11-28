@@ -42,12 +42,16 @@ function requestValidation(p){const v=p.validation;v.status='awaiting';v.notifie
 function recordValidation(p){const v=p.validation;if(v.status!=='awaiting')throw Error('This report is not awaiting N+1 validation.');if(!v.manager.name)throw Error('Add your N+1 on the project first.');
  v.status='validated';v.validatedAt=now();v.by=v.manager.name;log(p,'N+1 validation recorded for '+v.manager.name+' (local record, not an authenticated approval)');}
 // Email draft for the N+1. The consultant sends it; the confidential client is deliberately left out.
+// The same recorded name, location, and contact that scrubReport replaces are removed here too, including the subject.
 function validationEmail(p,link=''){const r=p.report,v=p.validation;if(!r)throw Error('Save the interview report first.');if(!v.manager.email)throw Error('Add your N+1’s email on the project first.');
- const bullets=a=>a.length?a.map(x=>'- '+x).join('\n'):'- None noted';
- const head=`Hi ${v.manager.name||'there'},\n\n${p.consultant||'I'} completed an ATLAS project interview and would like your validation as N+1.\n\nProject: ${p.title} (${p.stage}${p.sector?', '+p.sector:''})\nRole: ${p.role||'not stated'}\n\n`;
- const foot=(link?'\n\nValidate it or request changes directly in ATLAS: '+link:'')+'\n\nPlease reply to confirm this account is accurate, or tell me what to correct.\n\nThe client name is recorded confidentially in ATLAS and is not included in this email. This report was drafted from a self-reported interview and is not independently verified.';
- let middle=`${r.headline}\n${r.summary}\n\nHighlights:\n${bullets(r.highlights)}\n\nOpen points:\n${bullets(r.gaps)}`;const room=1800-head.length-foot.length;if(middle.length>room)middle=middle.slice(0,Math.max(0,room-1))+'…';
- const body=head+middle+foot;return {to:v.manager.email,subject:'ATLAS report for validation: '+p.title,body};}
+ const names=[p.client?.name,p.client?.location,p.client?.contact].map(x=>String(x||'').trim()).filter(x=>x.length>=3);
+ const hide=s=>{if(typeof s!=='string')return '';if(!names.length)return s;return s.replace(new RegExp(names.map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|'),'gi'),'the client');};
+ const bullets=a=>a.length?a.map(x=>'- '+hide(x)).join('\n'):'- None noted';
+ const title=hide(p.title),sector=hide(p.sector),role=hide(p.role),who=hide(p.consultant)||'I',stage=hide(p.stage),shown=hide(link);
+ const head=`Hi ${v.manager.name||'there'},\n\n${who} completed an ATLAS project interview and would like your validation as N+1.\n\nProject: ${title} (${stage}${sector?', '+sector:''})\nRole: ${role||'not stated'}\n\n`;
+ const foot=(shown?'\n\nValidate it or request changes directly in ATLAS: '+shown:'')+'\n\nPlease reply to confirm this account is accurate, or tell me what to correct.\n\nThe client name is recorded confidentially in ATLAS and is not included in this email. This report was drafted from a self-reported interview and is not independently verified.';
+ let middle=`${hide(r.headline)}\n${hide(r.summary)}\n\nHighlights:\n${bullets(r.highlights)}\n\nOpen points:\n${bullets(r.gaps)}`;const room=1800-head.length-foot.length;if(middle.length>room)middle=middle.slice(0,Math.max(0,room-1))+'…';
+ const body=head+middle+foot;return {to:v.manager.email,subject:'ATLAS report for validation: '+title,body};}
 // Reference-record details (the brief's template). Stated by the consultant or typed; interview-filled fields are marked.
 const DETAIL_TEXT={projectId:60,country:60,start:20,end:20,duration:40},DETAIL_LISTS={teamRoles:[8,60],technologies:[15,60],deliverables:[10,160],serviceLines:[6,60]};
 function cleanList(v,n,limit){return [...new Set((Array.isArray(v)?v:typeof v==='string'?v.split(/[,;\n]/):[]).slice(0,50).map(x=>oneLine(x,limit)).filter(Boolean))].slice(0,n);}
