@@ -122,16 +122,40 @@ const SCRIPT = String.raw`(function () {
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Your answers could not be recorded. Try again.'); return j; }); })
       .then(function () { state.busy = false; done(item); }, function (e) { state.busy = false; update(); showError(e.message); });
   }
+  // The inbox returns at most 50 open rows, then a cursor. Stale rows are omitted from
+  // items and still advance the cursor, so the first response can be empty while a later
+  // page holds an open request. Follow the cursor, and stop if it repeats or after 20 pages.
+  function inboxPath(cursor) {
+    if (!cursor || !cursor.afterCreatedAt || !cursor.afterId) return '/api/library/confirmations/inbox';
+    return '/api/library/confirmations/inbox?afterCreatedAt=' + encodeURIComponent(cursor.afterCreatedAt) + '&afterId=' + encodeURIComponent(cursor.afterId);
+  }
+  function readInbox(r) {
+    return r.json().catch(function () { return {}; }).then(function (j) {
+      if (!r.ok) throw new Error(j.error || 'Your requests could not be loaded.');
+      return j;
+    });
+  }
+  function collectInbox(cursor, seen, left) {
+    return fetch(inboxPath(cursor), { credentials: 'same-origin' }).then(function (r) {
+      return readInbox(r).then(function (j) {
+        var items = j.items || [];
+        var next = j.next;
+        var key = next && next.afterCreatedAt && next.afterId ? String(next.afterCreatedAt) + '\n' + String(next.afterId) : '';
+        if (!key || seen[key] || left <= 0) return items;
+        seen[key] = true;
+        return collectInbox(next, seen, left - 1).then(function (rest) { return items.concat(rest); });
+      });
+    });
+  }
   function load() {
     fetch('/api/bootstrap', { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw new Error('Sign in to confirm.'); return r.json(); })
       .then(function (boot) {
         state.csrf = boot.csrf || '';
         if (!boot.features || !boot.features.claims) throw new Error('Confirmations are not available on this deployment.');
-        return fetch('/api/library/confirmations/inbox', { credentials: 'same-origin' });
+        return collectInbox(null, {}, 19);
       })
-      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) throw new Error(j.error || 'Your requests could not be loaded.'); return j; }); })
-      .then(function (j) { var h = render(j.items || [], location.hash); if (h && location.hash) h.focus(); })
+      .then(function (items) { var h = render(items, location.hash); if (h && location.hash) h.focus(); })
       .catch(function (e) { clear(byId('confirmInbox')); showError(e.message); });
     window.addEventListener('hashchange', function () { var h = render(state.items, location.hash); if (h) h.focus(); });
   }

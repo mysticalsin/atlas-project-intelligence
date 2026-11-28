@@ -992,8 +992,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/confirm-page.js",
-      "bytes": 11474,
-      "sha256": "72af3fdac540942670fbc0585171deb5380b02d2ce8ee32bbc0f3187d276b033"
+      "bytes": 12593,
+      "sha256": "2e3dce7035fcf15afee3b83462f425384fd5aa33fec6dff9d67ee7de908254ba"
     },
     {
       "path": "deploy/cloudflare-edge/src/csp-report.js",
@@ -1359,6 +1359,11 @@
       "path": "deploy/cloudflare-edge/test/classify.test.js",
       "bytes": 3932,
       "sha256": "47e5f399713354a6cc7f57acf9bafed4a2cdade957e6f2b8b7185a7245af7ed5"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/confirm-inbox-page.test.js",
+      "bytes": 5259,
+      "sha256": "d1d866682983029110daee84834297ed5ff5e93b3e088e295bf35f249a53e46a"
     },
     {
       "path": "deploy/cloudflare-edge/test/confirm-page.test.js",
