@@ -68,12 +68,17 @@ class Analyst:
                     ignored += 1
                     continue
                 try:
-                    details = json.loads(call.get('arguments') or '{}')['details'][:12]
+                    parsed = json.loads(call.get('arguments') or '{}')
+                    details = parsed['details']
+                    # A string slices; it is not a list of detail objects. Count it once, like the edge analyst.
+                    if not isinstance(details, list):
+                        raise TypeError('details')
+                    details = details[:12]
                 except (ValueError, TypeError, KeyError):
                     rejected += 1
                     continue
                 # Per-detail validation: one invented quote cannot discard the exact ones beside it.
-                for n, detail in enumerate(details if isinstance(details, list) else []):
+                for n, detail in enumerate(details):
                     try:
                         self.ledger.call(f"{call.get('id', '')}#{n}", 'record_details', {'details': [detail]})
                     except (ValueError, TypeError):
