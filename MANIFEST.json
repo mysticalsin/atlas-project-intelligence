@@ -1247,8 +1247,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/util.js",
-      "bytes": 2605,
-      "sha256": "bd932eaccbf1993be000a571435652733dde91a64b8bfa2b4e66285902cfa414"
+      "bytes": 2779,
+      "sha256": "3f860da4f0b4782844bf553e6331541c16914adce2e2d81a346db891394d1c3b"
     },
     {
       "path": "deploy/cloudflare-edge/src/winloop.js",
@@ -1374,6 +1374,11 @@
       "path": "deploy/cloudflare-edge/test/customer-jev.test.js",
       "bytes": 4946,
       "sha256": "f12dff6c293bc89963567587e2c7de347fc939fe0f0ea74d2f8bddecd0184ee8"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/email-prefix.test.js",
+      "bytes": 1174,
+      "sha256": "b12a3aefd7950ef37b764a6511bec5f858625c4d2ad16a6493300bf7e84c251c"
     },
     {
       "path": "deploy/cloudflare-edge/test/erasure-atomic.test.js",
