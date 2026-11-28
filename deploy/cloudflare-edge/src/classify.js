@@ -32,6 +32,8 @@ const NOTICE = 'The project text is self-reported and untrusted: judge only what
 const LIMITS = { title: 140, role: 100, sector: 100, stage: 60 };
 
 const invalid = message => Object.assign(new Error(message), { status: 400 });
+// Spaces and format characters (a zero-width space, a word joiner) are not a title or an answer.
+const visible = value => typeof value === 'string' && value.replace(/[\p{Cf}\p{Z}\p{Cc}]/gu, '').length > 0;
 
 export function projectState(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid('Project must be an object');
@@ -42,7 +44,7 @@ export function projectState(raw) {
   if (!Array.isArray(answers) || answers.length !== 6 || answers.some(a => typeof a !== 'string')) throw invalid('Expected six answer strings');
   const topics = ['context', 'contribution', 'approach', 'outcome', 'evidence', 'customer_relevance'];
   out.account = Object.fromEntries(topics.map((t, i) => [t, answers[i].slice(0, 3000)]));
-  if (!out.title || !Object.values(out.account).some(v => v.trim())) throw invalid('Add at least one answer before scoring');
+  if (!visible(out.title) || !Object.values(out.account).some(visible)) throw invalid('Add at least one answer before scoring');
   return out;
 }
 
