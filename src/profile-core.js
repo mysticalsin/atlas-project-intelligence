@@ -45,13 +45,15 @@ function detectDelimiter(text){let best=',',n=-1;const line=(()=>{let q=false;fo
  for(const d of [',',';','\t']){let q=false,k=0;for(const c of line){if(c==='"')q=!q;else if(!q&&c===d)k++;}if(k>n){n=k;best=d;}}return best;}
 function parseCsv(input,{maxRows=20000}={}){let text=String(input??'');if(text.charCodeAt(0)===0xFEFF)text=text.slice(1);
  const d=detectDelimiter(text),rows=[];let row=[],cell='',q=false,i=0;
- const endRow=()=>{row.push(cell);cell='';if(!(row.length===1&&row[0]===''))rows.push(row);row=[];};
+ // rows[0] is the header, so maxRows people is length maxRows+1. The last record counts even with no trailing newline.
+ const endRow=()=>{row.push(cell);cell='';if(!(row.length===1&&row[0]===''))rows.push(row);row=[];
+  if(rows.length>maxRows+1)throw Error('This file has more than '+maxRows.toLocaleString('en')+' rows.');};
  while(i<text.length){const c=text[i];
   if(q){if(c==='"'){if(text[i+1]==='"'){cell+='"';i+=2;continue;}q=false;i++;continue;}cell+=c;i++;continue;}
   if(c==='"'&&cell===''){q=true;i++;continue;}
   if(c===d){row.push(cell);cell='';i++;continue;}
-  if(c==='\r'){endRow();i+=text[i+1]==='\n'?2:1;if(rows.length>maxRows)throw Error('This file has more than '+maxRows.toLocaleString('en')+' rows.');continue;}
-  if(c==='\n'){endRow();i++;if(rows.length>maxRows)throw Error('This file has more than '+maxRows.toLocaleString('en')+' rows.');continue;}
+  if(c==='\r'){endRow();i+=text[i+1]==='\n'?2:1;continue;}
+  if(c==='\n'){endRow();i++;continue;}
   cell+=c;i++;}
  if(cell!==''||row.length)endRow();
  return {delimiter:d,header:(rows.shift()||[]).map(h=>h.trim()),rows};}
