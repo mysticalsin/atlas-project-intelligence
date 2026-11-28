@@ -83,8 +83,13 @@ export function unfinished(text, lang = 'en') {
   // "...the intake. And" starts a new sentence (not a name); a stop after an initial or a title ("Dr. A") does not.
   const stop = /([\p{L}']+)[.!?。]\s+[\p{L}']+$/u.exec(t);
   const newSentence = !!stop && stop[1].length > 1 && !TITLES.has(stop[1].toLowerCase());
-  if (tokens.length > 1 && last !== last.toLowerCase() && !newSentence) return false; // a name or "plan A"
   const low = tokens.map(w => w.toLowerCase()), list = TRAIL[lang] || TRAIL.en;
-  if (list.words.has(low.at(-1))) return true;
-  return list.phrases.some(ph => ph.length <= low.length && ph.every((w, k) => low[low.length - ph.length + k] === w));
+  const trailWord = list.words.has(low.at(-1));
+  const trailPhrase = list.phrases.some(ph => ph.length <= low.length && ph.every((w, k) => low[low.length - ph.length + k] === w));
+  // A one-letter capital is a label ("plan A", "Dr. A"), not the article "a".
+  // A longer trailing word stays unfinished when recognition capitalises it after "p.m." or "St.".
+  if (tokens.length > 1 && last.length === 1 && last !== last.toLowerCase() && !newSentence) return false;
+  if (trailWord || trailPhrase) return true;
+  if (tokens.length > 1 && last !== last.toLowerCase() && !newSentence) return false;
+  return false;
 }

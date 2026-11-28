@@ -1057,8 +1057,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/languages.js",
-      "bytes": 6456,
-      "sha256": "1684e790262ce5ab1b6d67466a86176a8aca0cb112399f9330c3279093494f09"
+      "bytes": 6795,
+      "sha256": "aabea2959ba1f7002a26e278604c28874eed9f892ee40396895c941499d2bed3"
     },
     {
       "path": "deploy/cloudflare-edge/src/ledger.js",
@@ -1304,6 +1304,11 @@
       "path": "deploy/cloudflare-edge/teams/vendor_teamsjs.py",
       "bytes": 3060,
       "sha256": "3bae398a8099fd8a57e6f113611cf75632e3ed71fbc4459584eb01bdf9275d39"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/abbreviation-turn.test.js",
+      "bytes": 1161,
+      "sha256": "be693e88607ad3bd7292e20e1fc4c6911d90c31b6a96abb1c97805759d049997"
     },
     {
       "path": "deploy/cloudflare-edge/test/app.test.js",
