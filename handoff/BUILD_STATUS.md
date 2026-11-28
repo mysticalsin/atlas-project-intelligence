@@ -165,6 +165,10 @@ Measured on `3f254111b63bb2035e1a9e3192a3858c15575333` before this paragraph. `A
 | 5 JEV / optional Graphify | FIXTURES_VERIFIED / LIVE_SETUP_PENDING | Real JEV and calibration; Graphify only if enabled |
 | 6 Bounded pilot | NOT_RELEASED | Mandatory acceptance evidence and authorized deployment |
 
+## 2026-11-25 - dev identity header-safe address
+
+A development identity whose address contains a code point above 255 used to throw when the local edge copied it into a request header. The process never sent a status. `dev/local-edge.mjs` now answers 400 and does not call the Worker. A Latin-1 address still reaches the Worker. This is the local synthetic identity only. Live Entra and Access are unchanged. No provider was called.
+
 ## Sessions
 
 ### Session: 2026-09-26 / baseline + Cloudflare hosting

@@ -22,6 +22,7 @@ import { storyRater } from '../src/rating.js';
 import { recordUsage } from '../src/telemetry.js';
 import { saveJourney } from '../src/journey.js';
 import { TENANT_ID, devIdentityEnabled } from '../src/authz.js';
+import { devIdentityHeaderError } from './dev-identity.mjs';
 
 const PORT = Number(process.argv[2] || 8787), ORIGIN = `http://127.0.0.1:${PORT}`, TEAM = 'local.invalid', AUD = 'local-aud';
 const builtPage = new URL('../../../ATLAS_Voice.html', import.meta.url);
@@ -147,9 +148,22 @@ http.createServer(async (req, res) => {
     } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: e.message || 'refused' })); }
     return;
   }
+  let identityEmail = as;
+  try { identityEmail = decodeURIComponent(as); }
+  catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('This development identity is not a valid address.');
+    return;
+  }
+  const headerError = devIdentityHeaderError(identityEmail);
+  if (headerError) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(headerError);
+    return;
+  }
   const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers.set(k, v);
   headers.delete('cf-access-jwt-assertion');
-  if (!expired) headers.set('cf-access-jwt-assertion', await token(decodeURIComponent(as), custom));
+  if (!expired) headers.set('cf-access-jwt-assertion', await token(identityEmail, custom));
   const request = new Request(url, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
   const response = await handle(request, env, page, { waitUntil });
   const out = {}, cookies = []; response.headers.forEach((v, k) => { out[k] = v; });
