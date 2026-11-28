@@ -97,21 +97,29 @@ function deleteDirectoryKeys(lib, tenant, keys) {
 // Sent: invitations.source is a full alias. str(alias, 60) is that whole alias only when the alias
 // is no longer than 60 characters. A longer actor's 60-character prefix is shared and is not matched.
 // A row whose recipient is also the subject is deleted, not scrubbed. Each sent row gets its own token.
-// The tenant compare trims, the same way journeyTenant trims the caller. Counts are changes() after the write.
+// The tenant compare trims the same ends as journeyTenant (JavaScript trim), then lowercases.
+// SQLite trim() with one argument removes only U+0020, so a tab or other JavaScript space
+// around the same tenant id would stay. The character set is bound, not interpolated.
+// Counts are changes() after the write.
+const JS_TRIM_CHARS = String.fromCharCode(
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x00a0, 0x1680,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
+  0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+);
 export function eraseSubjectInvitations(lib, user, tenant) {
   if (!tableReady(lib, 'invitations')) return { removed: 0, scrubbed: 0 };
   const aliases = subjectAliases(user);
   if (!aliases.length) return { removed: 0, scrubbed: 0 };
   const prefixes = [...new Set(aliases.filter(alias => alias.length <= 60).map(alias => str(alias, 60).toLowerCase()).filter(Boolean))];
-  const scope = "lower(trim(COALESCE(tenant, ''))) = ?";
+  const scope = "lower(trim(COALESCE(tenant, ''), ?)) = ?";
   const aliasMarks = placeholders(aliases.length);
   const sourceMatch = prefixes.length
     ? `(lower(source) IN (${aliasMarks}) OR lower(source) IN (${placeholders(prefixes.length)}))`
     : `lower(source) IN (${aliasMarks})`;
-  lib.exec(`DELETE FROM invitations WHERE ${scope} AND lower(email) IN (${aliasMarks})`, tenant, ...aliases);
+  lib.exec(`DELETE FROM invitations WHERE ${scope} AND lower(email) IN (${aliasMarks})`, JS_TRIM_CHARS, tenant, ...aliases);
   const removed = Number(lib.rows('SELECT changes() AS n')[0]?.n || 0);
   const sentSql = `${scope} AND ${sourceMatch} AND lower(email) NOT IN (${aliasMarks})`;
-  const sentArgs = prefixes.length ? [tenant, ...aliases, ...prefixes, ...aliases] : [tenant, ...aliases, ...aliases];
+  const sentArgs = prefixes.length ? [JS_TRIM_CHARS, tenant, ...aliases, ...prefixes, ...aliases] : [JS_TRIM_CHARS, tenant, ...aliases, ...aliases];
   const sent = lib.rows(`SELECT id FROM invitations WHERE ${sentSql}`, ...sentArgs);
   let scrubbed = 0;
   for (const row of sent) {
