@@ -8,7 +8,8 @@
 // It does not recompute hash or prev_hash, so a later row, including another tenant's, is never resealed.
 // verify accepts a row when the HMAC of the current actor and detail equals commit, or when
 // the tombstone and its proof both match. A direct edit of either field fails.
-// The daily check stores n and head. A shorter chain is TRUNCATED. The stored head must still
+// appendAudit stores n and head after a successful insert. verifyDaily stores them again when
+// the chain still verifies. A shorter chain is TRUNCATED. The stored head must still
 // be the hash at that same position, so a prefix truncate padded with new rows is ANCHOR_MOVED.
 // The server key signs a row only when this process writes it. A database from main has no
 // hashes, no commits and no anchor row. Opening it appends one keyed chain-start row, including
@@ -36,7 +37,7 @@
 // SHA-256 and HMAC-SHA256 are synchronous because Library.log is synchronous.
 // Limits, honestly: pre-chain rows cannot be proved untampered, because nothing signed them.
 // Whoever can rewrite the keyed rows and recompute every hash and commit is not stopped by
-// an in-table chain. The daily anchor is what notices a missing keyed prefix.
+// an in-table chain. The anchor written on each successful append notices a missing keyed tail.
 import { timingSafe } from './timing-safe.js';
 import { charCodeAt, find, lower, slice, some } from './primordials.js';
 export const GENESIS = '0'.repeat(64);
@@ -300,6 +301,10 @@ export function ensureChain(sql, key = '', transactionSync = null, dbId = '') {
 }
 
 // The single write path for audit rows (called from Library.log).
+// A throw (null key, a second chain-start, a chain that does not verify) returns before the insert
+// and does not move the anchor. After the insert, the anchor advances the same way checkpointHead does,
+// inside the caller's transaction. A later verifyDaily may move it forward. A second checkpointHead
+// from Library.recorded stores the same n and head.
 export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key = '', dbId = '') {
   if (key == null) { const err = new Error('LOG_SALT is not set.'); err.status = 503; throw err; }
   if (String(action) === CHAIN_START) { const err = new Error('A second chain-start is refused.'); err.status = 409; throw err; }
@@ -317,6 +322,7 @@ export function appendAudit(sql, { id, actor, action, at, detail, tenant }, key 
     seq, id, actor, action, at, detail, tenant ?? '', prev, hash, commit, '');
   else sql.exec('INSERT INTO audit (seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     seq, id, actor, action, at, detail, prev, hash, commit, '');
+  checkpointHead(sql, key, dbId);
 }
 
 const ROW = 'seq, id, actor, action, at, detail, prev_hash, hash, "commit", tombstone';

@@ -46,10 +46,12 @@ test('rewriting id, action and at on a tombstone is not chain-verified and does 
   assert.equal(still.head, anchor.head);
 });
 
-test('rewriting a tombstone before the first daily check does not seed the anchor', () => {
+test('a forged tombstone does not move the anchor appendAudit already wrote', () => {
   const sql = memorySql();
   sql.exec(MAIN);
   appendAudit(sql, { id: 'r1', actor: EMAIL, action: 'saved', at: STAMP, detail: 'one' });
+  const anchor = anchorOf(sql);
+  assert.ok(anchor);
   tombstone(sql, 1);
   const row = sql.exec('SELECT prev_hash, "commit" FROM audit WHERE seq = 1').toArray()[0];
   const forged = { id: 'forged', action: 'validated', at: '2099-01-01T00:00:00.000Z', commit: row.commit };
@@ -57,7 +59,9 @@ test('rewriting a tombstone before the first daily check does not seed the ancho
   const daily = verifyDaily(fresh(sql));
   assert.equal(daily.ok, false);
   assert.notEqual(daily.reason, 'CHAIN_VERIFIED');
-  assert.equal(sql.exec('SELECT n, head FROM audit_anchor WHERE id = 1').toArray().length, 0);
+  const still = anchorOf(sql);
+  assert.equal(Number(still.n), Number(anchor.n));
+  assert.equal(still.head, anchor.head);
 });
 
 test('a tenant edit on a tombstone is not chain-verified and does not move the anchor', () => {
