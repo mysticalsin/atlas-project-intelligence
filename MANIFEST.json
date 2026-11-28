@@ -2787,8 +2787,8 @@
     },
     {
       "path": "scripts/preview.py",
-      "bytes": 2335,
-      "sha256": "bb3b009de4eeeac0fa10fa91e32b4155a4de762fcead412222f4c509054c1909"
+      "bytes": 2538,
+      "sha256": "826fa9a1439ffeddeac80899f8fd5a66172b37624aa0c7aec7b0fdf629ffaea8"
     },
     {
       "path": "scripts/render_privacy_docs.py",
@@ -3467,8 +3467,8 @@
     },
     {
       "path": "tests/test_preview.py",
-      "bytes": 1523,
-      "sha256": "a6c8e4ba34f624d5a3508fa36a22756e65ecdb78adf5b65d0ad1a35224ee0d90"
+      "bytes": 1860,
+      "sha256": "fa28f9e971139b52f7b15408f9db0e4699040473f3c7040d911c41a7f2ac9bc1"
     },
     {
       "path": "tests/test_privacy_config.py",
