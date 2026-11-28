@@ -3,6 +3,13 @@
 import { lexical } from '../src/reuse.js';
 import { EXTRA_FAKES } from './fakes/index.mjs';
 const first = t => (String(t || '').split(/(?<=[.!?])\s/)[0] || '').slice(0, 200);
+// Sheet challenge replies are "Group\nQ: ...\nA: ..." blocks joined by a blank line.
+// Keep every line-start answer. A reply with no such marker is kept whole, so "Plan A:" is not cut.
+const challengeAnswers = ans => {
+  const text = String(ans || '').trim();
+  if (!text || !/(?:^|\n)A:/.test(text)) return text;
+  return [...text.matchAll(/(?:^|\n)A:[ \t]*([\s\S]*?)(?=\n\n[^\n]*\nQ:|$)/g)].map(m => m[1].trim()).filter(Boolean).join('\n');
+};
 const INDUSTRY = [[/energy|oil|gas|utility|power/i, 'Energy'], [/bank|finance|payment/i, 'Banking'], [/insur/i, 'Insurance'], [/telecom|operator|network/i, 'Telecom'], [/retail|shop/i, 'Retail']];
 export function fakeModel() {
   const words = t => (String(t).toLowerCase().match(/[a-z0-9&+.-]{3,}/g) || []);
@@ -36,7 +43,7 @@ export function fakeModel() {
       if (system.startsWith('You are an assistant specialising in project reference sheets')) {
         const m = JSON.parse(input), doc = m.source_document || '', ans = m.consultant_answers_to_challenges || '', p = m.project || {};
         const sentences = (doc.match(/[^.!?\n]+[.!?]/g) || []).map(s => s.trim()), TBD = 'To be completed';
-        const answer = ans ? ans.split('A:').pop().trim() : '';
+        const answer = challengeAnswers(ans);
         return JSON.stringify({ title: p.title || (doc.split('\n').find(Boolean) || '').slice(0, 60),
           exec: { summary: sentences.length >= 3 ? sentences.slice(0, 3).join(' ') : TBD, teamSize: /consultant/i.test(doc) ? (doc.match(/\d+ consultants[^.\n]*/i) || [TBD])[0] : TBD, duration: (doc.match(/\d+ months/) || [TBD])[0], price: TBD, contacts: TBD },
           sections: { industry: p.sector ? p.sector + ' client' : TBD, issue: sentences[0] || TBD, scope: doc ? doc.split('\n').filter(Boolean).slice(1, 3).join(' ') : TBD, methodology: TBD, deliverables: TBD, tools: TBD, team: TBD, value: answer || TBD },
