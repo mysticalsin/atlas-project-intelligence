@@ -1207,8 +1207,8 @@
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-bound.js",
-      "bytes": 2567,
-      "sha256": "a6caed83cfd5dc7bcc1d3c984e3ac9aa8161f9a14fbf2d9b5afbc60ce9b1f9f7"
+      "bytes": 2789,
+      "sha256": "cdf82db5f19247e68d114edb8e441cd7d18e86dd03664d19999764033d5815e5"
     },
     {
       "path": "deploy/cloudflare-edge/src/sql-tail.js",
@@ -1724,6 +1724,11 @@
       "path": "deploy/cloudflare-edge/test/speech.vectors.json",
       "bytes": 5187,
       "sha256": "6d84e6dcb3d94e1638053b86141582c1a1361dd2f194f9effbffa78856d4d24a"
+    },
+    {
+      "path": "deploy/cloudflare-edge/test/sql-bound-room.test.js",
+      "bytes": 1338,
+      "sha256": "fbaca8de62c7683c9edefde2af2991a51925af2572fc439ee3ad0d904bd7ed12"
     },
     {
       "path": "deploy/cloudflare-edge/test/sql-bound.test.js",

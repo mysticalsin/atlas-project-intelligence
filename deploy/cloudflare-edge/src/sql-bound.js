@@ -8,8 +8,12 @@ export function placeholders(count) {
 }
 
 function roomFor(fixed, copies) {
+  // A negative fixed count makes the room larger than the 100-parameter ceiling.
+  if (!Number.isInteger(fixed) || fixed < 0 || !Number.isInteger(copies) || copies < 1) {
+    throw new Error('Durable Object SQL allows at most 100 bound parameters.');
+  }
   const room = Math.floor((BOUND_MAX - fixed) / copies);
-  if (!Number.isInteger(fixed) || !Number.isInteger(copies) || copies < 1 || room < 1) {
+  if (room < 1 || fixed + copies * room > BOUND_MAX) {
     throw new Error('Durable Object SQL allows at most 100 bound parameters.');
   }
   return room;
